@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useRef, useCallback } from 'react';
-import type { Tower, Troop } from '@/lib/tower-game';
+import type { Tower, Troop, Team } from '@/lib/tower-game';
 
 interface FogOfWarProps {
   towers: Tower[];
@@ -10,6 +10,7 @@ interface FogOfWarProps {
   theme?: string;
   enabled?: boolean;
   gameAge?: number;
+  myTeam?: Team;
 }
 
 // Crisp memory mask resolution
@@ -24,6 +25,7 @@ export function FogOfWar({
   theme = 'dark-green',
   enabled = true,
   gameAge = 0,
+  myTeam = 'you',
 }: FogOfWarProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const memoryCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -78,8 +80,9 @@ export function FogOfWar({
   // ─── Collect Vision Sources (Towers & Troops) ──────────────────────────────
   const buildSources = useCallback(() => {
     const src: { x: number; y: number; r: number }[] = [];
+    const userTeam = myTeam ?? 'you';
     for (const t of towers) {
-      if (t.team === 'you') {
+      if (t.team === userTeam) {
         src.push({
           x: (t.x / 100) * width,
           y: (t.y / 100) * height,
@@ -88,7 +91,7 @@ export function FogOfWar({
       }
     }
     for (const p of troops) {
-      if (p.team === 'you') {
+      if (p.team === userTeam) {
         src.push({
           x: (p.x / 100) * width,
           y: (p.y / 100) * height,
@@ -97,7 +100,7 @@ export function FogOfWar({
       }
     }
     return src;
-  }, [towers, troops, width, height]);
+  }, [towers, troops, width, height, myTeam]);
 
   // ─── Carve Smooth Organic Vision Cloud Cutout (No hard circles) ────────────
   const carveVision = (

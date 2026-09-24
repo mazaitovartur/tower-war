@@ -1845,6 +1845,7 @@ export default function Home() {
               theme={mapTheme}
               enabled={fogEnabled}
               gameAge={game.age}
+              myTeam={myTeam}
             />
             <div className="battle-units">
               <svg
@@ -2242,7 +2243,7 @@ export default function Home() {
           >
             {speech ? <Volume2 size={18} /> : <VolumeX size={18} />} Реплики
           </button>
-          <TroopLayer game={game} camera={camera} viewport={viewport} speech={speech} paused={paused || help} fogEnabled={fogEnabled} />
+          <TroopLayer game={game} camera={camera} viewport={viewport} speech={speech} paused={paused || help} fogEnabled={fogEnabled} myTeam={myTeam} />
           {!recording && (paused || help || game.result) && (
             <div className="game-overlay">
               <section className={`overlay-card ${game.result ? 'victory-card' : ''}`}>

@@ -1,25 +1,27 @@
 'use client';
 import { memo, useEffect, useRef } from 'react';
-import { type Game, WORLD_WIDTH, WORLD_HEIGHT } from '@/lib/tower-game';
+import { type Game, type Team, WORLD_WIDTH, WORLD_HEIGHT } from '@/lib/tower-game';
 import type { Camera } from '@/lib/camera';
 
 // One drawing surface instead of hundreds of independently animated DOM images.
-export const TroopLayer = memo(function TroopLayer({game, camera, viewport, speech, paused, fogEnabled = true}: {
-  game: Game; camera: Camera; viewport: {w:number;h:number}; speech:boolean; paused:boolean; fogEnabled?: boolean;
+export const TroopLayer = memo(function TroopLayer({game, camera, viewport, speech, paused, fogEnabled = true, myTeam = 'you'}: {
+  game: Game; camera: Camera; viewport: {w:number;h:number}; speech:boolean; paused:boolean; fogEnabled?: boolean; myTeam?: Team;
 }) {
   const canvas = useRef<HTMLCanvasElement>(null);
-  const frame = useRef({game,camera,viewport,speech,paused,fogEnabled,at:0,interval:50,previous:new Map<number,{x:number;y:number}>()});
+  const frame = useRef({game,camera,viewport,speech,paused,fogEnabled,myTeam,at:0,interval:50,previous:new Map<number,{x:number;y:number}>()});
   useEffect(()=> {
     const old=frame.current;
     if (old.game === game) {
-      frame.current={...old,camera,viewport,speech,paused,fogEnabled};
+      frame.current={...old,camera,viewport,speech,paused,fogEnabled,myTeam};
       return;
     }
     const now=performance.now();
-    frame.current={game,camera,viewport,speech,paused,fogEnabled,at:now,interval:Math.max(16,Math.min(150,now-old.at)),
-      previous: game.age>=old.game.age && game.age-old.game.age<=.25
+    const rawDt = Math.max(16, Math.min(150, now - old.at));
+    const smoothInterval = old.interval ? old.interval * 0.65 + rawDt * 0.35 : rawDt;
+    frame.current={game,camera,viewport,speech,paused,fogEnabled,myTeam,at:now,interval:smoothInterval,
+      previous: game.age>=old.game.age && game.age-old.game.age<=.35
         ? new Map(old.game.troops.map(p=>[p.id,{x:p.x,y:p.y}])) : new Map()};
-  },[game,camera,viewport,speech,paused,fogEnabled]);
+  },[game,camera,viewport,speech,paused,fogEnabled,myTeam]);
   useEffect(()=> {
     let id=0,disposed=false;
     const reducedMotion=window.matchMedia('(prefers-reduced-motion: reduce)');
@@ -45,16 +47,17 @@ export const TroopLayer = memo(function TroopLayer({game, camera, viewport, spee
         const ctx=el.getContext('2d');
         if(ctx){
           ctx.setTransform(ratio,0,0,ratio,0,0);ctx.clearRect(0,0,f.viewport.w,f.viewport.h);
-          const blend=f.paused?1:Math.min(1,(now-f.at)/f.interval);
+          const blend=f.paused?1:Math.min(1.15,(now-f.at)/f.interval);
           const motion=f.paused?f.game.age:now/1000;
+          const userTeam = f.myTeam ?? 'you';
           for(const p of f.game.troops){
             if(p.delay>0)continue;
-            if(f.fogEnabled && p.team !== 'you') {
+            if(f.fogEnabled && p.team !== userTeam) {
               let bestDist = Infinity; // distance to nearest vision source (0 = inside)
               const WORLD_ASPECT = WORLD_HEIGHT / WORLD_WIDTH;
               // Check towers
               for(const t of f.game.towers) {
-                if(t.team === 'you') {
+                if(t.team === userTeam) {
                   const r = t.home ? 24 : 17.5;
                   const dx = t.x - p.x;
                   const dy = (t.y - p.y) * WORLD_ASPECT;
@@ -66,7 +69,7 @@ export const TroopLayer = memo(function TroopLayer({game, camera, viewport, spee
               // Check allied troops
               if(bestDist > 0) {
                 for(const ally of f.game.troops) {
-                  if(ally.team === 'you') {
+                  if(ally.team === userTeam) {
                     const r = ally.scoutUntil ? 23 : 10;
                     const dx = ally.x - p.x;
                     const dy = (ally.y - p.y) * WORLD_ASPECT;
