@@ -382,10 +382,29 @@ export function localDecree(prompt: string, casterName = 'Командир'): De
     (isMining && isLumber) ||
     /(?:ресурсн\S*\s*здан|все добыва|экономик)/.test(text);
 
-  const isClaiming =
-    /(?:сделай.*моими|моими|теперь\s+мо[еяи]|все\s+.*\s+мо[еяи]|под\s+мой\s+контроль|передай\s+мне|захвати|захват|присвой|отдай\s+мне|забери|хочу\s+вс[её]|покори|завоюй)/i.test(
+  const isQuestionOrChat =
+    /(?:^|\s)(?:приказы\s+уже|доступны\s+ли\s+приказ|когда\s+приказ|как\s+играть|что\s+делать|кто\s+(?:лидер|побежда|ведет)|привет|ку|хай|хеллоу|почему\s+не|зачем|что\s+это|как\s+дела)(?:\s|\?|$|[.!?])/i.test(
       text,
-    ) || /(?:^|\s)мо[еяи](?:\s|$|[.!?])/i.test(text);
+    );
+  if (isQuestionOrChat && !/(?:захват|уничтож|взорв|сожги|дай|добав|отними|щит|замороз|туман)/i.test(text)) {
+    return null;
+  }
+
+  const isSubtracting =
+    /(?:отними|отнять|забери|забрать|убери|убрать|убавь|убавить|уменьши|уменьшить|сократи|сократить|сними|снять|лиши|лишить|срежь|срезать|минус)/.test(
+      text,
+    );
+
+  const isSubtractingTroopsOrRes =
+    isSubtracting &&
+    !/(?:шахт|рудник|лесопил|казарм|башн|здани|контрол)/.test(text) &&
+    /(?:войск|арми|солдат|людей|люди|пехот|человек|сил\b|воин|юнит|золот|монет|деньг|древес|дерев|ресурс)/.test(text);
+
+  const isClaiming =
+    !isSubtractingTroopsOrRes &&
+    (/(?:сделай.*моими|моими|теперь\s+мо[еяи]|все\s+.*\s+мо[еяи]|под\s+мой\s+контроль|передай\s+мне|захвати|захват|присвой|отдай\s+мне|забери|хочу\s+вс[её]|покори|завоюй)/i.test(
+      text,
+    ) || /(?:^|\s)мо[еяи](?:\s|$|[.!?])/i.test(text));
 
   const isOtherTeams = /кроме меня|кроме моих|у других|у соперник|у враг|вражеск/.test(text);
 
@@ -455,11 +474,13 @@ export function localDecree(prompt: string, casterName = 'Командир'): De
           ? 'purple'
           : /зелен|бот 3/.test(text)
             ? 'green'
-            : /(?:^|\s)(?:мо[еяи]|моих|сво[еяи]|наш[еяи])(?:\s|$)/.test(text)
+            : /(?:^|\s)(?:мо[еяи]|моих|сво[еяи]|наш[еяи])(?:\s|$)/.test(text) && !isSubtracting
               ? 'you'
               : /враг|враж|противник/.test(text)
                 ? 'enemy'
-                : null;
+                : isSubtracting
+                  ? 'enemy'
+                  : null;
 
   let target: Target;
   if (teamPrefix) {
@@ -675,14 +696,18 @@ export function localDecree(prompt: string, casterName = 'Командир'): De
       ],
     };
   }
-  else if (/(?:золот|монет|деньг|денег|бабл|богатств|казн|финанс)/.test(text) && !isMining)
-    p = { kind: 'gold', target: target === 'main' ? 'all' : target, amount: amount ?? 200 };
-  else if (/(?:древес|дерев|ресурс|лес\b|материал|доск)/.test(text) && !isLumber)
+  else if (/(?:золот|монет|деньг|денег|бабл|богатств|казн|финанс)/.test(text) && !isMining) {
+    const finalGold = amount !== null ? (isSubtracting ? -Math.abs(amount) : amount) : (isSubtracting ? -150 : 200);
+    p = { kind: 'gold', target: target === 'main' ? (isSubtracting ? 'enemies' : 'all') : target, amount: finalGold };
+  }
+  else if (/(?:древес|дерев|ресурс|лес\b|материал|доск)/.test(text) && !isLumber) {
+    const finalWood = amount !== null ? (isSubtracting ? -Math.abs(amount) : amount) : (isSubtracting ? -100 : 150);
     p = {
       kind: 'resources',
-      target: target === 'main' ? 'all' : target,
-      amount: amount ?? 150,
+      target: target === 'main' ? (isSubtracting ? 'enemies' : 'all') : target,
+      amount: finalWood,
     };
+  }
   else if (
     /(?:теперь мои|сделай моими|переман|захват|передай мне|под мой контроль|\bмои\b|\bмоими\b|\bмне\b|\bзабери|\bприсвой|хочу\s+вс|завоюй|покори)/.test(
       text,
@@ -736,8 +761,10 @@ export function localDecree(prompt: string, casterName = 'Командир'): De
     p = { kind: 'repair', target: target === 'all' ? 'all' : target, amount: 1 };
   else if (/продли|добавь\s+врем|таймер/.test(text))
     p = { kind: 'time', target: 'everyone', amount: amount ?? 60 };
-  else if (/войск|арми|солдат|людей|люди|пехот|человек|сил\b|подкрепл|дай|добав|прибав|увелич|\+|воин|юнит/.test(text))
-    p = { kind: 'reinforce', amount: amount ?? 30, target: target === 'all' ? 'all' : target };
+  else if (/войск|арми|солдат|людей|люди|пехот|человек|сил\b|подкрепл|дай|добав|прибав|увелич|\+|воин|юнит|отними|забери|убавь|уменьши|сократи|сними/.test(text)) {
+    const finalAmount = amount !== null ? (isSubtracting ? -Math.abs(amount) : amount) : (isSubtracting ? -30 : 30);
+    p = { kind: 'reinforce', amount: finalAmount, target: target === 'all' ? (isSubtracting ? 'enemies' : 'all') : target };
+  }
   else if (target !== 'all' && /мо[еяи]/.test(text)) {
     p = { kind: 'transfer', target, amount: 1 };
   }
@@ -818,9 +845,9 @@ export function describeAction(a: Action): string {
     case 'repair': return `🔨 Восстановление разрушенных зданий [цель: ${t}]`;
     case 'rename': return `🏷️ Переименование в "${a.text ?? ''}" [цель: ${t}]`;
     case 'label': return `👑 Статус над штабом: "${a.text ?? ''}" [цель: ${t}]`;
-    case 'reinforce': return `👥 Подкрепление: ${a.amount >= 0 ? '+' : ''}${a.amount} бойцов [цель: ${t}]`;
-    case 'gold': return `💰 Золото: ${a.amount >= 0 ? '+' : ''}${a.amount} [цель: ${t}]`;
-    case 'resources': return `🪵 Древесина: ${a.amount >= 0 ? '+' : ''}${a.amount} [цель: ${t}]`;
+    case 'reinforce': return a.amount < 0 ? `🔻 Отнять ${Math.abs(a.amount)} бойцов [цель: ${t}]` : `👥 Подкрепление: +${a.amount} бойцов [цель: ${t}]`;
+    case 'gold': return a.amount < 0 ? `🔻 Изъять ${Math.abs(a.amount)} золота [цель: ${t}]` : `💰 Золото: +${a.amount} [цель: ${t}]`;
+    case 'resources': return a.amount < 0 ? `🔻 Изъять ${Math.abs(a.amount)} древесины [цель: ${t}]` : `🪵 Древесина: +${a.amount} [цель: ${t}]`;
     case 'speed': return `👟 Скорость бега: ×${a.amount} [цель: ${t}]`;
     case 'growth': return `📈 Прирост гарнизона: ×${a.amount} [цель: ${t}]`;
     case 'upgrade': return `⭐ Уровень зданий повышен до ${a.amount} [цель: ${t}]`;
