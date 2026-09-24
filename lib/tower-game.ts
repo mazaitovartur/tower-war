@@ -1748,13 +1748,17 @@ function matches(t: Tower, target: Target, actor: Team): boolean {
     const targetTeam =
       teamPart === 'enemy' || teamPart === 'enemies'
         ? 'enemies'
-        : teamPart === 'you'
-          ? actor
-          : teamPart;
+        : teamPart === 'neutral'
+          ? 'neutral'
+          : teamPart === 'you'
+            ? actor
+            : teamPart;
     const teamMatches =
       targetTeam === 'enemies'
         ? !!t.team && t.team !== actor
-        : t.team === targetTeam;
+        : targetTeam === 'neutral'
+          ? !t.team
+          : t.team === targetTeam;
     if (!teamMatches) return false;
     if (kindPart === 'mines' || kindPart === 'gold') return t.kind === 'gold';
     if (kindPart === 'sawmills' || kindPart === 'lumber') return t.kind === 'lumber';
@@ -2093,6 +2097,9 @@ export function applyDecree(
           }
         }
       }
+      if (a.kind === 'set' && a.amount === 0) {
+        next.troops = next.troops.filter((p) => !affected.includes(p.team));
+      }
       if (a.kind === 'multiply')
         for (const troop of next.troops)
           if (troopMatches(troop))
@@ -2106,7 +2113,9 @@ export function applyDecree(
           ? `${a.amount >= 0 ? '+' : ''}${a.amount} бойцов в выбранных зданиях`
           : a.kind === 'multiply'
             ? `Численность ×${a.amount}`
-            : `Гарнизоны: ${a.amount} бойцов`,
+            : a.amount === 0
+              ? `Войска и гарнизоны обнулены (${targets.length} зд.)`
+              : `Гарнизоны: ${a.amount} бойцов`,
       );
     }
   }
@@ -2439,6 +2448,9 @@ export function forceApplyDecreeWithLog(
           }
         }
       }
+      if (a.kind === 'set' && a.amount === 0) {
+        next.troops = next.troops.filter((p) => !affected.includes(p.team));
+      }
       if (a.kind === 'multiply')
         for (const troop of next.troops)
           if (troopMatches(troop))
@@ -2452,7 +2464,9 @@ export function forceApplyDecreeWithLog(
           ? `${a.amount >= 0 ? '+' : ''}${a.amount} бойцов в выбранных зданиях`
           : a.kind === 'multiply'
             ? `Численность ×${a.amount}`
-            : `Гарнизоны: ${a.amount} бойцов`,
+            : a.amount === 0
+              ? `Войска и гарнизоны обнулены (${targets.length} зд.)`
+              : `Гарнизоны: ${a.amount} бойцов`,
       );
     }
   }

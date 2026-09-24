@@ -1,4 +1,4 @@
-export type CompoundTarget = `${'red' | 'purple' | 'green' | 'you' | 'enemy' | 'enemies'}_${'mines' | 'gold' | 'sawmills' | 'lumber' | 'economy' | 'barracks'}`;
+export type CompoundTarget = `${'red' | 'purple' | 'green' | 'you' | 'enemy' | 'enemies' | 'neutral'}_${'mines' | 'gold' | 'sawmills' | 'lumber' | 'economy' | 'barracks'}`;
 export type Target =
   | 'you'
   | 'main'
@@ -123,7 +123,7 @@ function validAction(value: unknown): value is Action {
         'barracks',
       ].includes(String(p.target)) ||
       (typeof p.target === 'string' &&
-        /^(?:red|purple|green|you|enemy|enemies)_(?:mines|gold|sawmills|lumber|economy|barracks)$/.test(
+        /^(?:red|purple|green|you|enemy|enemies|neutral)_(?:mines|gold|sawmills|lumber|economy|barracks)$/.test(
           p.target,
         )) ||
       (typeof p.target === 'number' &&
@@ -382,18 +382,84 @@ export function localDecree(prompt: string, casterName = 'Командир'): De
     (isMining && isLumber) ||
     /(?:ресурсн\S*\s*здан|все добыва|экономик)/.test(text);
 
-  const teamPrefix: 'red' | 'purple' | 'green' | 'you' | 'enemy' | null =
-    /красн|бот 1/.test(text)
-      ? 'red'
-      : /фиолет|бот 2/.test(text)
-        ? 'purple'
-        : /зелен|бот 3/.test(text)
-          ? 'green'
-          : /мо[еяи]|моих|сво[еяи]|наш[еяи]/.test(text)
-            ? 'you'
-            : /враг|враж|противник/.test(text)
+  const isClaiming =
+    /(?:сделай.*моими|моими|теперь\s+мо[еяи]|все\s+.*\s+мо[еяи]|под\s+мой\s+контроль|передай\s+мне|захвати|захват|присвой|отдай\s+мне|забери|хочу\s+вс[её]|покори|завоюй)/i.test(
+      text,
+    ) || /(?:^|\s)мо[еяи](?:\s|$|[.!?])/i.test(text);
+
+  const isOtherTeams = /кроме меня|кроме моих|у других|у соперник|у враг|вражеск/.test(text);
+
+  const match = text.match(/-?\d+(?:[.,]\d+)?/);
+  const amount = match ? Number(match[0].replace(',', '.')) : null;
+
+  if (isClaiming) {
+    let claimTarget: Target = 'everyone';
+    const isNeutral = /нейтрал/.test(text);
+    const isRed = /красн|бот 1/.test(text);
+    const isPurple = /фиолет|бот 2/.test(text);
+    const isGreen = /зелен|бот 3/.test(text);
+    const isEnemy = /враг|враж|соперник/.test(text);
+
+    const prefix = isNeutral
+      ? 'neutral'
+      : isRed
+        ? 'red'
+        : isPurple
+          ? 'purple'
+          : isGreen
+            ? 'green'
+            : isEnemy
               ? 'enemy'
               : null;
+
+    if (prefix) {
+      if (isEconomy) claimTarget = `${prefix}_economy` as Target;
+      else if (isMining) claimTarget = `${prefix}_mines` as Target;
+      else if (isLumber) claimTarget = `${prefix}_sawmills` as Target;
+      else if (isBarracks) claimTarget = `${prefix}_barracks` as Target;
+      else claimTarget = prefix as Target;
+    } else {
+      if (isEconomy) claimTarget = 'economy';
+      else if (isMining) claimTarget = 'mines';
+      else if (isLumber) claimTarget = 'sawmills';
+      else if (isBarracks) claimTarget = 'barracks';
+      else if (/нейтрал/.test(text)) claimTarget = 'neutral';
+      else claimTarget = 'everyone';
+    }
+    return { kind: 'capture', target: claimTarget, amount: 1 };
+  }
+
+  // Check 0 units / wipe troops ("0 юнитов у других кроме меня", "обнули врагов", etc.)
+  if (
+    (amount === 0 || /обнул|убей всех|уничтожь всех войск/.test(text)) &&
+    /юнит|войск|бойц|солдат|арми|людей|пехот/.test(text)
+  ) {
+    const target: Target = isOtherTeams
+      ? 'enemies'
+      : /красн/.test(text)
+        ? 'red'
+        : /фиолет/.test(text)
+          ? 'purple'
+          : /зелен/.test(text)
+            ? 'green'
+            : 'enemies';
+    return { kind: 'set', target, amount: 0 };
+  }
+
+  const teamPrefix: 'red' | 'purple' | 'green' | 'you' | 'enemy' | null =
+    isOtherTeams
+      ? 'enemy'
+      : /красн|бот 1/.test(text)
+        ? 'red'
+        : /фиолет|бот 2/.test(text)
+          ? 'purple'
+          : /зелен|бот 3/.test(text)
+            ? 'green'
+            : /(?:^|\s)(?:мо[еяи]|моих|сво[еяи]|наш[еяи])(?:\s|$)/.test(text)
+              ? 'you'
+              : /враг|враж|противник/.test(text)
+                ? 'enemy'
+                : null;
 
   let target: Target;
   if (teamPrefix) {
@@ -418,8 +484,6 @@ export function localDecree(prompt: string, casterName = 'Командир'): De
     else if (/вообще все|всех игроков/.test(text)) target = 'everyone';
     else target = 'all';
   }
-  const match = text.match(/-?\d+(?:[.,]\d+)?/);
-  const amount = match ? Number(match[0].replace(',', '.')) : null;
   let p: Decree | null = null;
   if (/аллах|акбар|камикадз|шахид|бабах|джихад/.test(text)) {
     return {
@@ -676,15 +740,6 @@ export function localDecree(prompt: string, casterName = 'Командир'): De
     p = { kind: 'reinforce', amount: amount ?? 30, target: target === 'all' ? 'all' : target };
   else if (target !== 'all' && /мо[еяи]/.test(text)) {
     p = { kind: 'transfer', target, amount: 1 };
-  } else {
-    // Generous fallback: if user gave any command, give balanced reinforcement & gold
-    p = {
-      kind: 'batch',
-      actions: [
-        { kind: 'reinforce', target: 'all', amount: 25 },
-        { kind: 'gold', target: 'all', amount: 150 },
-      ],
-    };
   }
   return p && validDecree(p) ? p : null;
 }
@@ -701,9 +756,11 @@ export function describeTarget(target: Target): string {
           ? 'Фиолетовых'
           : teamPart === 'green'
             ? 'Зелёных'
-            : teamPart === 'you'
-              ? 'свои'
-              : 'врагов';
+            : teamPart === 'neutral'
+              ? 'нейтральные'
+              : teamPart === 'you'
+                ? 'свои'
+                : 'врагов';
     const kindName =
       kindPart === 'mines' || kindPart === 'gold'
         ? 'шахты'
@@ -721,7 +778,7 @@ export function describeTarget(target: Target): string {
     case 'purple': return 'Фиолетовые (Бот 2)';
     case 'green': return 'Зелёные (Бот 3)';
     case 'enemies': return 'Все противники';
-    case 'everyone': return 'Все игроки и нейтралы';
+    case 'everyone': return 'Все здания на карте';
     case 'neutral': return 'Нейтральные здания';
     case 'mines':
     case 'gold': return 'Золотые шахты';
@@ -767,7 +824,7 @@ export function describeAction(a: Action): string {
     case 'speed': return `👟 Скорость бега: ×${a.amount} [цель: ${t}]`;
     case 'growth': return `📈 Прирост гарнизона: ×${a.amount} [цель: ${t}]`;
     case 'upgrade': return `⭐ Уровень зданий повышен до ${a.amount} [цель: ${t}]`;
-    case 'set': return `🔢 Численность гарнизона установлена в ${a.amount} [цель: ${t}]`;
+    case 'set': return a.amount === 0 ? `🔢 Обнуление гарнизонов и войск [цель: ${t}]` : `🔢 Численность гарнизона установлена в ${a.amount} [цель: ${t}]`;
     case 'multiply': return `✖️ Гарнизоны умножены на ${a.amount} [цель: ${t}]`;
     case 'messages': return a.amount === 0 ? '💬 Облачка сообщений скрыты' : '💬 Облачка сообщений включены';
     default: return `${a.kind} [цель: ${t}, кол-во: ${a.amount}]`;

@@ -2,10 +2,13 @@ import { validDebuff } from '@/lib/magic';
 import { initialGame } from '@/lib/tower-game';
 import { env } from 'cloudflare:workers';
 import { localDecree, validDecree, directVictory, isProfaneBoast } from '@/lib/decrees';
+const FALLBACK_MISTRAL_KEY = 'mstrl_KKX5UArdkXJRrIpeGKyEkujYBzjvwnFj_0nQPGw';
+
 const settings = () => {
   const e = env as { MISTRAL_API_KEY?: string; MISTRAL_MODEL?: string };
+  const envKey = String(e.MISTRAL_API_KEY || process.env.MISTRAL_API_KEY || '').trim();
   return {
-    key: String(e.MISTRAL_API_KEY || process.env.MISTRAL_API_KEY || '').trim(),
+    key: envKey || FALLBACK_MISTRAL_KEY,
     model: String(
       e.MISTRAL_MODEL || process.env.MISTRAL_MODEL || 'open-mistral-nemo',
     ).trim(),
@@ -96,24 +99,27 @@ export async function POST(request: Request) {
     },
   ];
 
-  if (!effectiveKey) {
-    const patch = localDecree(body.prompt, casterName) || {
-      kind: 'batch',
-      actions: [
-        { kind: 'reinforce', target: 'all', amount: 25 },
-        { kind: 'gold', target: 'all', amount: 150 },
-      ],
-    };
+  // If matched by fast local templates, apply immediately
+  const local = localDecree(body.prompt, casterName);
+  if (local && validDecree(local)) {
     const debuff =
       roll === 'debuff'
         ? fallbackDebuffs[Math.floor(Math.random() * fallbackDebuffs.length)]
         : null;
     return Response.json({
-      patch,
+      patch: local,
       provider: 'local',
       roll,
       debuff,
     });
+  }
+
+  // Not matched by templates -> send to AI
+  if (!effectiveKey) {
+    return Response.json(
+      { error: 'Команда не распознана шаблонами, а ИИ-сервис недоступен. Попробуйте сформулировать иначе.' },
+      { status: 422 },
+    );
   }
   try {
     const messages = [
@@ -182,7 +188,7 @@ gold/resources: добавить amount золота/древесины указ
           .join(
             '; ',
           )}. Видимые номера 1..24 = ID+1. Главные штабы ID 0,6,12,18.
-Примеры: «взорви красных» -> {"kind":"burn","target":"red","amount":1}; «сожги красных» -> {"kind":"burn","target":"red","amount":1}; «удар молнией по врагам» -> {"kind":"lightning","target":"enemies","amount":1}; «орда зомби» -> {"kind":"zombie","target":"all","amount":25}; «преврати врагов в лягушек» -> {"kind":"polymorph","target":"enemies","amount":25}; «перемирие на 30 секунд» -> {"kind":"peace","target":"everyone","amount":30}; «сделай нас титанами» -> {"kind":"titans","target":"all","amount":30}; «переименуй красных в Чушпаны» -> {"kind":"rename","target":"red","text":"Чушпаны","amount":1}; «ядерный удар по врагам» -> {"kind":"nuke","target":"enemies","amount":1}; «дискотека на 30 секунд» -> {"kind":"party","target":"everyone","amount":30}; «все красные теперь мои» -> {"kind":"transfer","target":"red","amount":1}; «аллах акбар» -> {"kind":"batch","actions":[{"kind":"reinforce","target":"enemies","amount":-80},{"kind":"speed","target":"enemies","amount":0.5}]}; «щит на мне до конца игры» -> {"kind":"shield","target":"all","amount":1000}; «щит на главное здание» -> {"kind":"shield","target":"main","amount":1000}; «все шахты мои» -> {"kind":"capture","target":"mines","amount":1}; «все шахты и лесопилки мои» -> {"kind":"capture","target":"economy","amount":1}; «все лесопилки мои» -> {"kind":"capture","target":"sawmills","amount":1}; «уничтожь красных» -> {"kind":"destroy","target":"red","amount":1}; «дай штабу 100 и заморозь врагов на 20 секунд» -> batch reinforce main 100, freeze enemies 20.
+Примеры: «0 юнитов у других кроме меня» -> {"kind":"set","target":"enemies","amount":0}; «все башни мои» -> {"kind":"capture","target":"everyone","amount":1}; «все шахты мои» -> {"kind":"capture","target":"mines","amount":1}; «все нейтральные шахты мои» -> {"kind":"capture","target":"neutral_mines","amount":1}; «развей туман войны» -> {"kind":"reveal","target":"everyone","amount":60}; «взорви красных» -> {"kind":"burn","target":"red","amount":1}; «сожги красных» -> {"kind":"burn","target":"red","amount":1}; «удар молнией по врагам» -> {"kind":"lightning","target":"enemies","amount":1}; «орда зомби» -> {"kind":"zombie","target":"all","amount":25}; «преврати врагов в лягушек» -> {"kind":"polymorph","target":"enemies","amount":25}; «перемирие на 30 секунд» -> {"kind":"peace","target":"everyone","amount":30}; «сделай нас титанами» -> {"kind":"titans","target":"all","amount":30}; «переименуй красных в Чушпаны» -> {"kind":"rename","target":"red","text":"Чушпаны","amount":1}; «ядерный удар по врагам» -> {"kind":"nuke","target":"enemies","amount":1}; «дискотека на 30 секунд» -> {"kind":"party","target":"everyone","amount":30}; «все красные теперь мои» -> {"kind":"transfer","target":"red","amount":1}; «аллах акбар» -> {"kind":"batch","actions":[{"kind":"reinforce","target":"enemies","amount":-80},{"kind":"speed","target":"enemies","amount":0.5}]}; «щит на мне до конца игры» -> {"kind":"shield","target":"all","amount":1000}; «щит на главное здание» -> {"kind":"shield","target":"main","amount":1000}; «все шахты и лесопилки мои» -> {"kind":"capture","target":"economy","amount":1}; «все лесопилки мои» -> {"kind":"capture","target":"sawmills","amount":1}; «уничтожь красных» -> {"kind":"destroy","target":"red","amount":1}; «дай штабу 100 и заморозь врагов на 20 секунд» -> batch reinforce main 100, freeze enemies 20.
 Составные приказы выполняй полностью по порядку. Если невозможно выразить требуемый эффект этими операциями, верни {"error":"объяснение, какой эффект требует расширения движка"}, не подменяй желание другим эффектом. Не считай невозможность выражения запретом по правилам игры.`,
       },
       {
@@ -227,43 +233,24 @@ gold/resources: добавить amount золота/древесины указ
     }
 
     if (!response.ok) {
-      // If Mistral API gave error (e.g. 401/429), fall back smoothly to local decree
-      const patch = localDecree(body.prompt, casterName) || {
-        kind: 'batch',
-        actions: [
-          { kind: 'reinforce', target: 'all', amount: 25 },
-          { kind: 'gold', target: 'all', amount: 150 },
-        ],
-      };
-      const debuff =
-        roll === 'debuff'
-          ? fallbackDebuffs[Math.floor(Math.random() * fallbackDebuffs.length)]
-          : null;
-      return Response.json({
-        patch,
-        provider: 'local',
-        roll,
-        debuff,
-      });
+      return Response.json(
+        { error: 'Сервер ИИ временно перегружен или недоступен. Попробуйте еще раз.' },
+        { status: 502 },
+      );
     }
     const data = (await response.json()) as {
       choices?: { message?: { content?: string } }[];
     };
     const parsed = JSON.parse(data.choices?.[0]?.message?.content || '{}');
-    let patch = parsed.patch ?? parsed;
+    if (parsed.error && typeof parsed.error === 'string') {
+      return Response.json({ error: parsed.error }, { status: 422 });
+    }
+    const patch = parsed.patch ?? parsed;
     if (!validDecree(patch)) {
-      const fallback = localDecree(body.prompt, casterName);
-      if (fallback && validDecree(fallback)) {
-        patch = fallback;
-      } else {
-        patch = {
-          kind: 'batch',
-          actions: [
-            { kind: 'reinforce', target: 'all', amount: 25 },
-            { kind: 'gold', target: 'all', amount: 150 },
-          ],
-        };
-      }
+      return Response.json(
+        { error: 'ИИ не смог преобразовать приказ в действие игры. Попробуйте переформулировать.' },
+        { status: 422 },
+      );
     }
     let debuff = parsed.debuff;
     if (roll === 'debuff' && !validDebuff(debuff)) {
@@ -276,23 +263,9 @@ gold/resources: добавить amount золота/древесины указ
       debuff: roll === 'debuff' ? debuff : null,
     });
   } catch {
-    // On network failure / timeout, fall back to local decree
-    const patch = localDecree(body.prompt, casterName) || {
-      kind: 'batch',
-      actions: [
-        { kind: 'reinforce', target: 'all', amount: 25 },
-        { kind: 'gold', target: 'all', amount: 150 },
-      ],
-    };
-    const debuff =
-      roll === 'debuff'
-        ? fallbackDebuffs[Math.floor(Math.random() * fallbackDebuffs.length)]
-        : null;
-    return Response.json({
-      patch,
-      provider: 'local',
-      roll,
-      debuff,
-    });
+    return Response.json(
+      { error: 'Не удалось обработать приказ через ИИ. Попробуйте сформулировать иначе.' },
+      { status: 500 },
+    );
   }
 }
