@@ -17,7 +17,7 @@ export type NetworkMessage =
   | { type: 'LOBBY_STATE'; players: PlayerSlot[]; hostName: string }
   | { type: 'SELECT_TEAM'; team: Team }
   | { type: 'TOGGLE_READY' }
-  | { type: 'START_GAME'; seed: number; humanTeams: Team[] }
+  | { type: 'START_GAME'; seed: number; humanTeams: Team[]; initialGame?: Game }
   | {
       type: 'PLAYER_ACTION';
       action:
@@ -48,9 +48,22 @@ export function getPeerId(roomCode: string): string {
   return `tw-host-${roomCode.toUpperCase().trim()}`;
 }
 
+export const PEER_CONFIG = {
+  debug: 1,
+  config: {
+    iceServers: [
+      { urls: 'stun:stun.l.google.com:19302' },
+      { urls: 'stun:stun1.l.google.com:19302' },
+      { urls: 'stun:stun2.l.google.com:19302' },
+      { urls: 'stun:stun3.l.google.com:19302' },
+      { urls: 'stun:stun4.l.google.com:19302' },
+    ],
+  },
+};
+
 export type MultiplayerCallbacks = {
   onLobbyChange?: (players: PlayerSlot[]) => void;
-  onGameStart?: (seed: number, humanTeams: Team[]) => void;
+  onGameStart?: (seed: number, humanTeams: Team[], initialGame?: Game) => void;
   onPlayerAction?: (action: NetworkMessage & { type: 'PLAYER_ACTION' }) => void;
   onGameSync?: (game: Game) => void;
   onError?: (err: string) => void;
@@ -82,9 +95,7 @@ export class MultiplayerSession {
     const peerId = getPeerId(this.roomCode);
 
     return new Promise((resolve, reject) => {
-      this.peer = new Peer(peerId, {
-        debug: 1,
-      });
+      this.peer = new Peer(peerId, PEER_CONFIG);
 
       this.peer.on('open', (id: string) => {
         this.myId = id;
@@ -126,9 +137,7 @@ export class MultiplayerSession {
     const hostPeerId = getPeerId(this.roomCode);
 
     return new Promise((resolve, reject) => {
-      this.peer = new Peer({
-        debug: 1,
-      });
+      this.peer = new Peer(PEER_CONFIG);
 
       this.peer.on('open', (id: string) => {
         this.myId = id;
@@ -166,6 +175,7 @@ export class MultiplayerSession {
   }
 
   private handleIncomingConnection(conn: any) {
+    this.connections.set(conn.peer, conn);
     conn.on('open', () => {
       this.connections.set(conn.peer, conn);
     });
@@ -178,6 +188,11 @@ export class MultiplayerSession {
       this.connections.delete(conn.peer);
       this.players = this.players.filter((p) => p.id !== conn.peer);
       this.broadcastLobby();
+    });
+
+    conn.on('error', (err: any) => {
+      console.warn('Peer connection error with', conn.peer, err);
+      this.connections.delete(conn.peer);
     });
   }
 
@@ -227,7 +242,7 @@ export class MultiplayerSession {
       if (me) this.myTeam = me.team;
       this.callbacks.onLobbyChange?.(this.players);
     } else if (msg.type === 'START_GAME') {
-      this.callbacks.onGameStart?.(msg.seed, msg.humanTeams);
+      this.callbacks.onGameStart?.(msg.seed, msg.humanTeams, msg.initialGame);
     } else if (msg.type === 'GAME_SYNC') {
       this.callbacks.onGameSync?.(msg.game);
     }
@@ -263,18 +278,23 @@ export class MultiplayerSession {
     } as NetworkMessage);
   }
 
-  startGame(seed = Date.now()) {
+  startGame(seed = Date.now(), initialGame?: Game) {
     if (!this.isHost) return;
     const humanTeams: Team[] = this.players.map((p) => p.team);
     const msg: NetworkMessage = {
       type: 'START_GAME',
       seed,
       humanTeams,
+      initialGame,
     };
     for (const conn of this.connections.values()) {
-      if (conn.open) conn.send(msg);
+      try {
+        if (conn.open) conn.send(msg);
+      } catch (err) {
+        console.warn('startGame send error', err);
+      }
     }
-    this.callbacks.onGameStart?.(seed, humanTeams);
+    this.callbacks.onGameStart?.(seed, humanTeams, initialGame);
   }
 
   sendAction(action: (NetworkMessage & { type: 'PLAYER_ACTION' })['action']) {
@@ -286,18 +306,42 @@ export class MultiplayerSession {
     if (this.isHost) {
       this.callbacks.onPlayerAction?.(msg as any);
     } else {
-      this.hostConnection?.send(msg);
+      try {
+        if (this.hostConnection?.open) {
+          this.hostConnection.send(msg);
+        } else {
+          console.warn('Host connection not open for action', action);
+        }
+      } catch (err) {
+        console.warn('sendAction failed', err);
+      }
     }
   }
 
-  broadcastGameSync(game: Game) {
+  private lastSyncTime = 0;
+
+  broadcastGameSync(game: Game, force = false) {
     if (!this.isHost) return;
+    const now = performance.now();
+    // Throttle to ~15 updates per second (every 66ms) to prevent WebRTC buffer choking
+    if (!force && now - this.lastSyncTime < 66) return;
+    this.lastSyncTime = now;
+
     const msg: NetworkMessage = {
       type: 'GAME_SYNC',
       game,
     };
     for (const conn of this.connections.values()) {
-      if (conn.open) conn.send(msg);
+      try {
+        const dc = conn.dataChannel;
+        // Skip frame if receiver buffer is congested (prevents dropping or disconnection)
+        if (dc && typeof dc.bufferedAmount === 'number' && dc.bufferedAmount > 65536) {
+          continue;
+        }
+        if (conn.open) conn.send(msg);
+      } catch (err) {
+        console.warn('broadcastGameSync error', err);
+      }
     }
   }
 

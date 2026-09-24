@@ -96,6 +96,7 @@ import {
   forceApplyDecreeWithLog,
   findRoute,
   type Tower,
+  type Game,
 } from '@/lib/tower-game';
 
 export type MapTheme = 'dark-green' | 'autumn' | 'night' | 'snow' | 'bonus-night' | 'bonus-snow';
@@ -319,13 +320,16 @@ export default function Home() {
             if(next.game.age>=recording.duration)setPaused(true);
           }
         } else if (!mpSessionRef.current || isMpHost) {
+          let nextState: Game | null = null;
           setGame((g) => {
-            for (let i = 0; i < steps; i++) g = tick(g, 0.05);
-            if (isMpHost && mpSessionRef.current) {
-              mpSessionRef.current.broadcastGameSync(g);
-            }
-            return g;
+            let next = g;
+            for (let i = 0; i < steps; i++) next = tick(next, 0.05);
+            nextState = next;
+            return next;
           });
+          if (isMpHost && mpSessionRef.current && nextState) {
+            mpSessionRef.current.broadcastGameSync(nextState);
+          }
         }
       }
       handle = requestAnimationFrame(update);
@@ -939,7 +943,12 @@ export default function Home() {
     });
   };
 
-  const handleStartMpGame = (sess: MultiplayerSession, seed: number, humanTeams: Team[]) => {
+  const handleStartMpGame = (
+    sess: MultiplayerSession,
+    seed: number,
+    humanTeams: Team[],
+    initialGameData?: Game,
+  ) => {
     initAudio();
     restoreBgm();
     playBgm();
@@ -968,7 +977,7 @@ export default function Home() {
     };
 
     if (sess.isHost) {
-      const newG = initialGame();
+      const newG = initialGameData ?? initialGame();
       newG.humanTeams = humanTeams;
       const playerNames: Partial<Record<Team, string>> = {};
       for (const p of sess.players) {
@@ -976,14 +985,16 @@ export default function Home() {
       }
       newG.players = { ...(newG.players ?? {}), ...playerNames };
       setGame(newG);
-      sess.broadcastGameSync(newG);
+      sess.broadcastGameSync(newG, true);
 
-      const home = newG.towers.find((t) => t.team === sess.myTeam && t.home) ?? newG.towers[0];
+      const home = newG.towers.find((t: Tower) => t.team === sess.myTeam && t.home) ?? newG.towers[0];
       if (home) {
         focusPoint(home.x, home.y, 1.0);
       }
     } else {
-      const home = game.towers.find((t) => t.team === sess.myTeam && t.home);
+      const startingG = initialGameData ?? initialGame();
+      setGame(startingG);
+      const home = startingG.towers.find((t: Tower) => t.team === sess.myTeam && t.home);
       if (home) {
         focusPoint(home.x, home.y, 1.0);
       }

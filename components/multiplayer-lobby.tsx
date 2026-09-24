@@ -2,15 +2,15 @@
 
 import React, { useState, useEffect } from 'react';
 import { Users, Copy, Check, Play, LogOut, Shield, Crown, Sparkles } from 'lucide-react';
-import type { Team } from '@/lib/tower-game';
-import { TEAMS } from '@/lib/tower-game';
+import type { Team, Game } from '@/lib/tower-game';
+import { TEAMS, initialGame } from '@/lib/tower-game';
 import type { PlayerSlot, MultiplayerSession } from '@/lib/multiplayer';
 import { generateRoomCode } from '@/lib/multiplayer';
 
 export interface MultiplayerLobbyProps {
   session: MultiplayerSession | null;
   nickname: string;
-  onStartGame: (session: MultiplayerSession, seed: number, humanTeams: Team[]) => void;
+  onStartGame: (session: MultiplayerSession, seed: number, humanTeams: Team[], initialGame?: Game) => void;
   onCancel: () => void;
   initialRoomCode?: string;
 }
@@ -57,7 +57,7 @@ export function MultiplayerLobby({
       const { MultiplayerSession } = await import('@/lib/multiplayer');
       const sess = new MultiplayerSession({
         onLobbyChange: (newPlayers) => setPlayers([...newPlayers]),
-        onGameStart: (seed, humanTeams) => onStartGame(sess, seed, humanTeams),
+        onGameStart: (seed, humanTeams, initialGame) => onStartGame(sess, seed, humanTeams, initialGame),
         onError: (err) => setError(err),
       });
 
@@ -86,7 +86,7 @@ export function MultiplayerLobby({
       const { MultiplayerSession } = await import('@/lib/multiplayer');
       const sess = new MultiplayerSession({
         onLobbyChange: (newPlayers) => setPlayers([...newPlayers]),
-        onGameStart: (seed, humanTeams) => onStartGame(sess, seed, humanTeams),
+        onGameStart: (seed, humanTeams, initialGame) => onStartGame(sess, seed, humanTeams, initialGame),
         onError: (err) => setError(err),
       });
 
@@ -294,7 +294,17 @@ export function MultiplayerLobby({
                 <button
                   type="button"
                   className="mp-action-btn mp-primary-btn start-battle-btn"
-                  onClick={() => activeSession?.startGame()}
+                  onClick={() => {
+                    const g = initialGame();
+                    const humanTeams = activeSession?.players.map((p) => p.team) || [];
+                    g.humanTeams = humanTeams;
+                    const playerNames: Partial<Record<Team, string>> = {};
+                    for (const p of activeSession?.players || []) {
+                      playerNames[p.team] = p.name;
+                    }
+                    g.players = { ...(g.players ?? {}), ...playerNames };
+                    activeSession?.startGame(Date.now(), g);
+                  }}
                 >
                   <Play size={18} fill="currentColor" />
                   <span>В БОЙ!</span>
