@@ -790,43 +790,6 @@ export default function Home() {
         <div className="settings-group">
           <label className="settings-slider-label">
             <div className="slider-header">
-              <span>Ключ Mistral AI (необязательно)</span>
-            </div>
-            <input
-              type="password"
-              placeholder="Ключ для свободного ИИ понимания..."
-              value={mistralApiKey}
-              onChange={(e) => {
-                const val = e.target.value.trim();
-                setMistralApiKey(val);
-                try {
-                  if (val) localStorage.setItem('mistral-api-key', val);
-                  else localStorage.removeItem('mistral-api-key');
-                } catch {}
-              }}
-              style={{
-                width: '100%',
-                padding: '7px 10px',
-                borderRadius: '8px',
-                border: '1px solid rgba(255,255,255,0.25)',
-                background: 'rgba(0,0,0,0.3)',
-                color: '#fff',
-                fontSize: '11px',
-                marginTop: '6px',
-                boxSizing: 'border-box',
-              }}
-            />
-          </label>
-          <small className="settings-hint">
-            Без ключа все приказы и рулетка исполняются встроенным алгоритмом без ошибок.
-          </small>
-        </div>
-
-        <hr className="settings-divider" />
-
-        <div className="settings-group">
-          <label className="settings-slider-label">
-            <div className="slider-header">
               <span>Эффекты</span>
               <b>{Math.round(sfxVol * 100)}%</b>
             </div>
