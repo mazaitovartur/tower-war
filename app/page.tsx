@@ -157,6 +157,7 @@ export default function Home() {
   const [routeMode, setRouteMode] = useState(true);
   const [showSettings, setShowSettings] = useState(false);
   const [debuffsEnabled, setDebuffsEnabled] = useState(false);
+  const [mistralApiKey, setMistralApiKey] = useState('');
   const [scoutMode, setScoutMode] = useState(false);
   const [showStats, setShowStats] = useState(false);
   const [typingDeadline, setTypingDeadline] = useState(0);
@@ -268,6 +269,8 @@ export default function Home() {
       if (s !== null) setSfxVol(parseFloat(s));
       const b = localStorage.getItem('bgmVolume');
       if (b !== null) setBgmVol(parseFloat(b));
+      const k = localStorage.getItem('mistral-api-key');
+      if (k) setMistralApiKey(k);
     } catch {}
 
     const unlock = () => {
@@ -366,14 +369,14 @@ export default function Home() {
     fetch('/api/decree')
       .then(async (r) => (await r.json()) as { provider?: string })
       .then((d) =>
-        setProvider(d.provider === 'mistral' ? 'mistral' : 'local'),
+        setProvider(d.provider === 'mistral' || !!mistralApiKey ? 'mistral' : 'local'),
       )
-      .catch(() => setProvider('local'));
+      .catch(() => setProvider(mistralApiKey ? 'mistral' : 'local'));
     return () => {
       pending.current?.abort();
       replayLoad.current?.abort();
     };
-  }, []);
+  }, [mistralApiKey]);
   useEffect(() => {
     if (pending.current) {
       pending.current.abort();
@@ -779,7 +782,44 @@ export default function Home() {
             />
             <span>Рулетка штрафов · 50%</span>
           </label>
-          <small className="settings-hint">Рулетка требует подключения ИИ на сервере.</small>
+          <small className="settings-hint">50% шанс получить забавный побочный штраф при исполнении указа.</small>
+        </div>
+
+        <hr className="settings-divider" />
+
+        <div className="settings-group">
+          <label className="settings-slider-label">
+            <div className="slider-header">
+              <span>Ключ Mistral AI (необязательно)</span>
+            </div>
+            <input
+              type="password"
+              placeholder="Ключ для свободного ИИ понимания..."
+              value={mistralApiKey}
+              onChange={(e) => {
+                const val = e.target.value.trim();
+                setMistralApiKey(val);
+                try {
+                  if (val) localStorage.setItem('mistral-api-key', val);
+                  else localStorage.removeItem('mistral-api-key');
+                } catch {}
+              }}
+              style={{
+                width: '100%',
+                padding: '7px 10px',
+                borderRadius: '8px',
+                border: '1px solid rgba(255,255,255,0.25)',
+                background: 'rgba(0,0,0,0.3)',
+                color: '#fff',
+                fontSize: '11px',
+                marginTop: '6px',
+                boxSizing: 'border-box',
+              }}
+            />
+          </label>
+          <small className="settings-hint">
+            Без ключа все приказы и рулетка исполняются встроенным алгоритмом без ошибок.
+          </small>
         </div>
 
         <hr className="settings-divider" />
@@ -1124,6 +1164,7 @@ export default function Home() {
           prompt: submittedDraft,
           debuffsEnabled,
           nickname: effectiveNickname,
+          apiKey: mistralApiKey || undefined,
         }),
         signal: request.signal,
       });
@@ -2801,7 +2842,17 @@ export default function Home() {
           )}
         </section>
       )}
-            <div className="hud-notifications" aria-live="polite">
+      <div
+        className="hud-notifications"
+        aria-live="polite"
+        style={{
+          width: 'min(440px, calc(100vw - 24px))',
+          maxWidth: 'min(440px, calc(100vw - 24px))',
+          overflowX: 'hidden',
+          overflowY: 'auto',
+          boxSizing: 'border-box',
+        }}
+      >
         <div className="battle-notice">
           <span className="notice-dot" />
           <p>{game.notice}</p>
@@ -2824,7 +2875,16 @@ export default function Home() {
         </button>
       )}
       {game.spell && (
-        <output className="spell-toast roulette-card-enhanced">
+        <output
+          className="spell-toast roulette-card-enhanced"
+          style={{
+            width: '100%',
+            maxWidth: '100%',
+            boxSizing: 'border-box',
+            overflow: 'hidden',
+            overflowX: 'hidden',
+          }}
+        >
           <div className="roulette-disc-wrap">
             <div
               className={`roulette-disc ${game.spell.patch || game.spell.roll === 'disabled' ? 'settled' : ''} ${game.spell.debuff ? 'debuff' : game.spell.patch ? 'pure' : ''}`}
@@ -2832,16 +2892,43 @@ export default function Home() {
               {game.spell.roll === 'debuff' ? '☠' : game.spell.patch ? '✦' : '🎲'}
             </div>
           </div>
-          <div className="roulette-card-body">
+          <div
+            className="roulette-card-body"
+            style={{
+              minWidth: 0,
+              width: '100%',
+              maxWidth: '100%',
+              overflow: 'hidden',
+              boxSizing: 'border-box',
+            }}
+          >
             <div className="roulette-top-badge">
               <Sparkles size={13} className="roulette-sparkle" />
               <span>РУЛЕТКА ПРИКАЗОВ ЛИДЕРА</span>
             </div>
-            <div className="roulette-status-line">
+            <div
+              className="roulette-status-line"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                flexWrap: 'wrap',
+                gap: '6px',
+                width: '100%',
+                minWidth: 0,
+              }}
+            >
               <span className="roulette-caster" style={{ color: TEAMS[game.spell.team].color }}>
                 {playerName(game, game.spell.team)}
               </span>
-              <span className={`roulette-outcome-badge ${game.spell.debuff ? 'penalty' : 'pure'}`}>
+              <span
+                className={`roulette-outcome-badge ${game.spell.debuff ? 'penalty' : 'pure'}`}
+                style={{
+                  whiteSpace: 'normal',
+                  wordBreak: 'break-word',
+                  maxWidth: '100%',
+                }}
+              >
                 {game.spell.patch
                   ? game.spell.debuff
                     ? `⚠️ Штраф: ${game.spell.debuff.title}`
@@ -2851,8 +2938,25 @@ export default function Home() {
                     : 'Вращение рулетки…'}
               </span>
             </div>
-            <div className="roulette-prompt-hero">
-              <div className="roulette-hero-badges">
+            <div
+              className="roulette-prompt-hero"
+              style={{
+                width: '100%',
+                maxWidth: '100%',
+                boxSizing: 'border-box',
+                overflow: 'hidden',
+              }}
+            >
+              <div
+                className="roulette-hero-badges"
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  flexWrap: 'wrap',
+                  gap: '6px',
+                  maxWidth: '100%',
+                }}
+              >
                 <span
                   className="roulette-hero-author"
                   style={{
@@ -2866,7 +2970,14 @@ export default function Home() {
                   {game.spell.prompt.startsWith('⚡') ? 'СОБЫТИЕ ЭРЫ' : 'УКАЗ ВЛАСТЕЛИНА'}
                 </span>
               </div>
-              <div className="roulette-hero-text">
+              <div
+                className="roulette-hero-text"
+                style={{
+                  wordBreak: 'break-word',
+                  overflowWrap: 'anywhere',
+                  maxWidth: '100%',
+                }}
+              >
                 {game.spell.patch
                   ? describeDecree(game.spell.patch)[0] || game.spell.prompt
                   : game.spell.prompt}
@@ -2880,7 +2991,16 @@ export default function Home() {
               </small>
             </div>
             {game.spell.debuff && (
-              <p className="roulette-debuff-desc">⚠️ {game.spell.debuff.description}</p>
+              <p
+                className="roulette-debuff-desc"
+                style={{
+                  wordBreak: 'break-word',
+                  overflowWrap: 'anywhere',
+                  maxWidth: '100%',
+                }}
+              >
+                ⚠️ {game.spell.debuff.description}
+              </p>
             )}
           </div>
         </output>

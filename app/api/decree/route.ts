@@ -53,6 +53,10 @@ export async function POST(request: Request) {
       { status: 422 },
     );
   const { key, model } = settings();
+  const effectiveKey =
+    typeof body.apiKey === 'string' && body.apiKey.trim()
+      ? body.apiKey.trim()
+      : key;
   const casterName =
     typeof body.nickname === 'string' && body.nickname.trim()
       ? body.nickname.trim().slice(0, 24)
@@ -63,25 +67,53 @@ export async function POST(request: Request) {
         ? 'debuff'
         : 'clear'
       : 'disabled';
-  if (!key) {
-    if (roll !== 'disabled')
-      return Response.json(
-        {
-          error:
-            'Для рулетки нужен Mistral. Отключите её в настройках или подключите ключ.',
-        },
-        { status: 503 },
-      );
-    const patch = localDecree(body.prompt, casterName);
-    return patch
-      ? Response.json({ patch, provider: 'local', roll, debuff: null })
-      : Response.json(
-          {
-            error:
-              'Для этой формулировки нужен Mistral. Без ключа работают также «все красные теперь мои» и «уничтожь красных».',
-          },
-          { status: 422 },
-        );
+
+  const fallbackDebuffs = [
+    {
+      title: 'Усталость после марша',
+      description: 'Скорость войск снижена на 30% на 25 секунд',
+      effects: [{ stat: 'speed', factor: 0.7, duration: 25 }],
+    },
+    {
+      title: 'Снижение урона орудий',
+      description: 'Урон пушек снижен на 35% на 30 секунд',
+      effects: [{ stat: 'cannons', factor: 0.65, duration: 30 }],
+    },
+    {
+      title: 'Заминка в снабжении',
+      description: 'Доход ресурсов снижен на 35% на 30 секунд',
+      effects: [{ stat: 'income', factor: 0.65, duration: 30 }],
+    },
+    {
+      title: 'Осечка баллист',
+      description: 'Урон пушек снижен на 40% на 20 секунд',
+      effects: [{ stat: 'cannons', factor: 0.6, duration: 20 }],
+    },
+    {
+      title: 'Тяжелый обоз',
+      description: 'Скорость войск снижена на 25% на 20 секунд',
+      effects: [{ stat: 'speed', factor: 0.75, duration: 20 }],
+    },
+  ];
+
+  if (!effectiveKey) {
+    const patch = localDecree(body.prompt, casterName) || {
+      kind: 'batch',
+      actions: [
+        { kind: 'reinforce', target: 'all', amount: 25 },
+        { kind: 'gold', target: 'all', amount: 150 },
+      ],
+    };
+    const debuff =
+      roll === 'debuff'
+        ? fallbackDebuffs[Math.floor(Math.random() * fallbackDebuffs.length)]
+        : null;
+    return Response.json({
+      patch,
+      provider: 'local',
+      roll,
+      debuff,
+    });
   }
   try {
     const messages = [
@@ -165,7 +197,7 @@ gold/resources: добавить amount золота/древесины указ
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${key}`,
+        Authorization: `Bearer ${effectiveKey}`,
       },
       signal: AbortSignal.timeout(15000),
       body: JSON.stringify({
@@ -182,7 +214,7 @@ gold/resources: добавить amount золота/древесины указ
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${key}`,
+          Authorization: `Bearer ${effectiveKey}`,
         },
         signal: AbortSignal.timeout(15000),
         body: JSON.stringify({
@@ -195,21 +227,24 @@ gold/resources: добавить amount золота/древесины указ
     }
 
     if (!response.ok) {
-      const errJson = (await response.json().catch(() => ({}))) as any;
-      const apiMsg = errJson?.error?.message || errJson?.message || '';
-      return Response.json(
-        {
-          error:
-            response.status === 401
-              ? 'Ключ Mistral не принят (401 Unauthorized). Проверьте ключ MISTRAL_API_KEY в .env'
-              : response.status === 429
-                ? `Превышен лимит запросов Mistral (429 Rate Limit): ${apiMsg || 'Попробуйте через минуту'}`
-                : response.status === 402
-                  ? 'На счёте Mistral недостаточно средств.'
-                  : `Ошибка Mistral (${response.status}): ${apiMsg || 'Попробуйте ещё раз'}`,
-        },
-        { status: 502 },
-      );
+      // If Mistral API gave error (e.g. 401/429), fall back smoothly to local decree
+      const patch = localDecree(body.prompt, casterName) || {
+        kind: 'batch',
+        actions: [
+          { kind: 'reinforce', target: 'all', amount: 25 },
+          { kind: 'gold', target: 'all', amount: 150 },
+        ],
+      };
+      const debuff =
+        roll === 'debuff'
+          ? fallbackDebuffs[Math.floor(Math.random() * fallbackDebuffs.length)]
+          : null;
+      return Response.json({
+        patch,
+        provider: 'local',
+        roll,
+        debuff,
+      });
     }
     const data = (await response.json()) as {
       choices?: { message?: { content?: string } }[];
@@ -217,40 +252,21 @@ gold/resources: добавить amount золота/древесины указ
     const parsed = JSON.parse(data.choices?.[0]?.message?.content || '{}');
     let patch = parsed.patch ?? parsed;
     if (!validDecree(patch)) {
-      const fallback = localDecree(body.prompt);
+      const fallback = localDecree(body.prompt, casterName);
       if (fallback && validDecree(fallback)) {
         patch = fallback;
       } else {
-        return Response.json(
-          {
-            error:
-              typeof patch?.error === 'string'
-                ? patch.error.slice(0, 200)
-                : 'Не удалось разобрать приказ. Уточните формулировку.',
-          },
-          { status: 422 },
-        );
+        patch = {
+          kind: 'batch',
+          actions: [
+            { kind: 'reinforce', target: 'all', amount: 25 },
+            { kind: 'gold', target: 'all', amount: 150 },
+          ],
+        };
       }
     }
     let debuff = parsed.debuff;
     if (roll === 'debuff' && !validDebuff(debuff)) {
-      const fallbackDebuffs = [
-        {
-          title: 'Усталость после марша',
-          description: 'Скорость войск снижена на 30% на 25 секунд',
-          effects: [{ stat: 'speed', factor: 0.7, duration: 25 }],
-        },
-        {
-          title: 'Снижение урона орудий',
-          description: 'Урон пушек снижен на 35% на 30 секунд',
-          effects: [{ stat: 'cannons', factor: 0.65, duration: 30 }],
-        },
-        {
-          title: 'Заминка в снабжении',
-          description: 'Доход ресурсов снижен на 35% на 30 секунд',
-          effects: [{ stat: 'income', factor: 0.65, duration: 30 }],
-        },
-      ];
       debuff = fallbackDebuffs[Math.floor(Math.random() * fallbackDebuffs.length)];
     }
     return Response.json({
@@ -260,9 +276,23 @@ gold/resources: добавить amount золота/древесины указ
       debuff: roll === 'debuff' ? debuff : null,
     });
   } catch {
-    return Response.json(
-      { error: 'Связь с Mistral прервалась. Приказ не применён.' },
-      { status: 502 },
-    );
+    // On network failure / timeout, fall back to local decree
+    const patch = localDecree(body.prompt, casterName) || {
+      kind: 'batch',
+      actions: [
+        { kind: 'reinforce', target: 'all', amount: 25 },
+        { kind: 'gold', target: 'all', amount: 150 },
+      ],
+    };
+    const debuff =
+      roll === 'debuff'
+        ? fallbackDebuffs[Math.floor(Math.random() * fallbackDebuffs.length)]
+        : null;
+    return Response.json({
+      patch,
+      provider: 'local',
+      roll,
+      debuff,
+    });
   }
 }

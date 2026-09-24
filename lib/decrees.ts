@@ -417,7 +417,7 @@ export function localDecree(prompt: string, casterName = 'Командир'): De
   }
   const match = text.match(/-?\d+(?:[.,]\d+)?/);
   const amount = match ? Number(match[0].replace(',', '.')) : null;
-  let p: Action | null = null;
+  let p: Decree | null = null;
   if (/аллах|акбар|камикадз|шахид|бабах|джихад/.test(text)) {
     return {
       kind: 'batch',
@@ -589,25 +589,25 @@ export function localDecree(prompt: string, casterName = 'Командир'): De
       ],
     };
   }
-  else if (/(?:золот|монет)/.test(text) && amount !== null && !isMining)
-    p = { kind: 'gold', target: target === 'main' ? 'all' : target, amount };
-  else if (/(?:древес|дерев|ресурс)/.test(text) && amount !== null && !isLumber)
+  else if (/(?:золот|монет)/.test(text) && !isMining)
+    p = { kind: 'gold', target: target === 'main' ? 'all' : target, amount: amount ?? 200 };
+  else if (/(?:древес|дерев|ресурс)/.test(text) && !isLumber)
     p = {
       kind: 'resources',
       target: target === 'main' ? 'all' : target,
-      amount,
+      amount: amount ?? 150,
     };
   else if (
-    /(?:теперь мои|сделай моими|переман|захват|передай мне|под мой контроль|\bмои\b|\bмоими\b|\bмне\b|\bзабери|\bприсвой)/.test(
+    /(?:теперь мои|сделай моими|переман|захват|передай мне|под мой контроль|\bмои\b|\bмоими\b|\bмне\b|\bзабери|\bприсвой|хочу\s+вс)/.test(
       text,
     )
   )
-    p = { kind: 'transfer', target, amount: 1 };
-  else if (/уничтож|убей|сотри|убери|ликвидируй|снеси|взорви/.test(text))
-    p = { kind: 'destroy', target, amount: 1 };
-  else if (/замороз|останов/.test(text))
-    p = { kind: 'freeze', target, amount: amount ?? 30 };
-  else if (/бессмерт|неуязвим|щит/.test(text)) {
+    p = { kind: 'transfer', target: target === 'all' ? 'enemies' : target, amount: 1 };
+  else if (/уничтож|убей|сотри|убери|ликвидируй|снеси|взорви|разруш|казни/.test(text))
+    p = { kind: 'destroy', target: target === 'all' ? 'enemies' : target, amount: 1 };
+  else if (/замороз|останов|стан|обездвиж/.test(text))
+    p = { kind: 'freeze', target: target === 'all' ? 'enemies' : target, amount: amount ?? 30 };
+  else if (/бессмерт|неуязвим|щит|защит/.test(text)) {
     const isForever = /(?:до\s+конца|навсегда|вечн)/.test(text);
     p = {
       kind: 'shield',
@@ -617,7 +617,7 @@ export function localDecree(prompt: string, casterName = 'Командир'): De
           : target === 'main'
             ? 'main'
             : 'all',
-      amount: isForever ? 1000 : (amount ?? 240),
+      amount: isForever ? 1000 : (amount ?? 120),
     };
   }
   else if (/прирост|производ|генер|рожда/.test(text))
@@ -630,7 +630,7 @@ export function localDecree(prompt: string, casterName = 'Командир'): De
     p = {
       kind: 'speed',
       target: target === 'main' ? 'all' : target,
-      amount: amount ?? (/замедл/.test(text) ? 0.5 : 2),
+      amount: amount ?? (/замедл/.test(text) ? 0.5 : 1.5),
     };
   else if (/удво|утро|умнож/.test(text))
     p = {
@@ -638,10 +638,19 @@ export function localDecree(prompt: string, casterName = 'Командир'): De
       target,
       amount: amount ?? (/утро/.test(text) ? 3 : 2),
     };
-  else if (/дай|добав|прибав|увелич|\+|подкреп/.test(text) && amount !== null)
-    p = { kind: 'reinforce', amount, target };
+  else if (/войск|арми|солдат|людей|человек|сил\b|подкрепл|дай|добав|прибав|увелич|\+/.test(text))
+    p = { kind: 'reinforce', amount: amount ?? 30, target: target === 'all' ? 'all' : target };
   else if (target !== 'all' && /мо[еяи]/.test(text)) {
     p = { kind: 'transfer', target, amount: 1 };
+  } else {
+    // Generous fallback: if user gave any command, give balanced reinforcement & gold
+    p = {
+      kind: 'batch',
+      actions: [
+        { kind: 'reinforce', target: 'all', amount: 25 },
+        { kind: 'gold', target: 'all', amount: 150 },
+      ],
+    };
   }
   return p && validDecree(p) ? p : null;
 }
