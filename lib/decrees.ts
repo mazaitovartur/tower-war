@@ -1,0 +1,738 @@
+export type CompoundTarget = `${'red' | 'purple' | 'green' | 'you' | 'enemy' | 'enemies'}_${'mines' | 'gold' | 'sawmills' | 'lumber' | 'economy' | 'barracks'}`;
+export type Target =
+  | 'you'
+  | 'main'
+  | 'all'
+  | 'red'
+  | 'purple'
+  | 'green'
+  | 'enemies'
+  | 'everyone'
+  | 'neutral'
+  | 'mines'
+  | 'gold'
+  | 'sawmills'
+  | 'lumber'
+  | 'economy'
+  | 'barracks'
+  | CompoundTarget
+  | number;
+export type Action = {
+  kind:
+    | 'messages'
+    | 'reinforce'
+    | 'set'
+    | 'multiply'
+    | 'growth'
+    | 'speed'
+    | 'capture'
+    | 'transfer'
+    | 'destroy'
+    | 'freeze'
+    | 'shield'
+    | 'upgrade'
+    | 'time'
+    | 'gold'
+    | 'resources'
+    | 'label'
+    | 'rename'
+    | 'burn'
+    | 'repair'
+    | 'confuse'
+    | 'party'
+    | 'nuke'
+    | 'explode'
+    | 'lightning'
+    | 'zombie'
+    | 'blackhole'
+    | 'blizzard'
+    | 'midas'
+    | 'tornado'
+    | 'polymorph'
+    | 'peace'
+    | 'orbital'
+    | 'alien'
+    | 'titans';
+  amount: number;
+  target: Target;
+  text?: string;
+};
+export type Decree = Action | { kind: 'batch'; actions: Action[] };
+function validAction(value: unknown): value is Action {
+  if (!value || typeof value !== 'object') return false;
+  const p = value as Action;
+  if (
+    ![
+      'messages',
+      'reinforce',
+      'set',
+      'multiply',
+      'growth',
+      'speed',
+      'capture',
+      'transfer',
+      'destroy',
+      'freeze',
+      'shield',
+      'upgrade',
+      'time',
+      'gold',
+      'resources',
+      'label',
+      'rename',
+      'burn',
+      'repair',
+      'confuse',
+      'party',
+      'nuke',
+      'explode',
+      'lightning',
+      'zombie',
+      'blackhole',
+      'blizzard',
+      'midas',
+      'tornado',
+      'polymorph',
+      'peace',
+      'orbital',
+      'alien',
+      'titans',
+    ].includes(p.kind) ||
+    !Number.isFinite(p.amount) ||
+    Math.abs(p.amount) > 1e9
+  )
+    return false;
+  if (
+    !(
+      [
+        'main',
+        'all',
+        'red',
+        'purple',
+        'green',
+        'enemies',
+        'everyone',
+        'neutral',
+        'mines',
+        'gold',
+        'sawmills',
+        'lumber',
+        'economy',
+        'barracks',
+      ].includes(String(p.target)) ||
+      (typeof p.target === 'string' &&
+        /^(?:red|purple|green|you|enemy|enemies)_(?:mines|gold|sawmills|lumber|economy|barracks)$/.test(
+          p.target,
+        )) ||
+      (typeof p.target === 'number' &&
+        Number.isInteger(p.target) &&
+        p.target >= 0 &&
+        p.target < 64)
+    )
+  )
+    return false;
+  if (
+    [
+      'multiply',
+      'growth',
+      'speed',
+      'freeze',
+      'shield',
+      'upgrade',
+      'set',
+      'label',
+      'rename',
+      'burn',
+      'repair',
+      'confuse',
+      'party',
+      'nuke',
+      'explode',
+      'lightning',
+      'zombie',
+      'blackhole',
+      'blizzard',
+      'midas',
+      'tornado',
+      'polymorph',
+      'peace',
+      'orbital',
+      'alien',
+      'titans',
+    ].includes(p.kind) &&
+    p.amount < 0
+  )
+    return false;
+  if (['growth', 'speed', 'multiply'].includes(p.kind) && p.amount > 1000)
+    return false;
+  if (
+    p.kind === 'messages' &&
+    (![0, 1].includes(p.amount) || p.target !== 'everyone')
+  )
+    return false;
+  if (
+    ['label', 'rename'].includes(p.kind) &&
+    p.text !== undefined &&
+    (typeof p.text !== 'string' || p.text.length > 50)
+  )
+    return false;
+  return true;
+}
+export function validDecree(value: unknown): value is Decree {
+  if (!value || typeof value !== 'object') return false;
+  const p = value as Decree;
+  return p.kind === 'batch'
+    ? Array.isArray(p.actions) &&
+        p.actions.length > 0 &&
+        p.actions.length <= 12 &&
+        p.actions.every(validAction)
+    : validAction(value);
+}
+export function directVictory(prompt: string) {
+  return /^(?:(?:сделай|объяви|засчитай|дай)\s+(?:мне\s+)?(?:мгновенную\s+)?побед\S*|я\s+(?:уже\s+)?победил[аи]?|i\s+win|make\s+me\s+win)[.!\s]*$/iu.test(
+    prompt.trim(),
+  );
+}
+export function isProfaneBoast(prompt: string): boolean {
+  const t = prompt.toLowerCase().replaceAll('ё', 'е').trim();
+  return /(?:выеб\S*|обесчест\S*|трахн\S*|обосс\S*|нагн\S*|опустил\S*|натянул\S*|отсос\S*|сос[уи]\S*|сосите|посос\S*)/iu.test(
+    t,
+  );
+}
+
+export function declineName(name: string): {
+  nominative: string;
+  genitive: string;
+  dative: string;
+  accusative: string;
+  instrumental: string;
+} {
+  const clean = name.trim();
+  if (!clean) {
+    return {
+      nominative: 'Командир',
+      genitive: 'Командира',
+      dative: 'Командиру',
+      accusative: 'Командира',
+      instrumental: 'Командиром',
+    };
+  }
+
+  const lastChar = clean.slice(-1).toLowerCase();
+  const baseWithoutLast = clean.slice(0, -1);
+
+  // Masculine ending in hard consonant (Командир, Влад, Макс, Иван, Султан, Хан, Бот)
+  if (/[бвгджзклмнпрстфхцчшщ]$/i.test(clean)) {
+    return {
+      nominative: clean,
+      genitive: `${clean}а`,
+      dative: `${clean}у`,
+      accusative: `${clean}а`,
+      instrumental: `${clean}ом`,
+    };
+  }
+
+  // Names ending in "я" (Саня, Ваня, Коля, Илья, Женя)
+  if (lastChar === 'я') {
+    return {
+      nominative: clean,
+      genitive: `${baseWithoutLast}и`,
+      dative: `${baseWithoutLast}е`,
+      accusative: `${baseWithoutLast}ю`,
+      instrumental: `${baseWithoutLast}ей`,
+    };
+  }
+
+  // Names ending in "а" (Вова, Дима, Серёжа, Паша, Никита, Владыка)
+  if (lastChar === 'а') {
+    const takesI = /[гкхжчшщ]$/i.test(baseWithoutLast);
+    return {
+      nominative: clean,
+      genitive: `${baseWithoutLast}${takesI ? 'и' : 'ы'}`,
+      dative: `${baseWithoutLast}е`,
+      accusative: `${baseWithoutLast}у`,
+      instrumental: `${baseWithoutLast}ой`,
+    };
+  }
+
+  // Names ending in "й" (Сергей, Андрей, Тимофей)
+  if (lastChar === 'й') {
+    return {
+      nominative: clean,
+      genitive: `${baseWithoutLast}я`,
+      dative: `${baseWithoutLast}ю`,
+      accusative: `${baseWithoutLast}я`,
+      instrumental: `${baseWithoutLast}ем`,
+    };
+  }
+
+  // Names ending in "ь" (Игорь, Вождь)
+  if (lastChar === 'ь') {
+    return {
+      nominative: clean,
+      genitive: `${baseWithoutLast}я`,
+      dative: `${baseWithoutLast}ю`,
+      accusative: `${baseWithoutLast}я`,
+      instrumental: `${baseWithoutLast}ем`,
+    };
+  }
+
+  return {
+    nominative: clean,
+    genitive: clean,
+    dative: clean,
+    accusative: clean,
+    instrumental: clean,
+  };
+}
+
+export function generateProceduralTaunt(casterName = 'Командир', promptText = ''): string {
+  const d = declineName(casterName);
+  const gen = d.genitive;      // Сани / Командира
+  const ins = d.instrumental;  // Саней / Командиром
+  const nom = d.nominative;    // Саня / Командир
+  const t = (promptText || '').toLowerCase().replaceAll('ё', 'е');
+
+  if (/обосс/.test(t)) {
+    const list = [
+      `Обоссан ${ins}`,
+      `Осквернён ${ins}`,
+      `Мокрый раб ${gen}`,
+      `Умыт мочой ${gen}`,
+      `Опозорен ${ins}`,
+      `Под струёй ${gen}`,
+    ];
+    return list[Math.floor(Math.random() * list.length)];
+  }
+
+  if (/нагн|раком|на колени/.test(t)) {
+    const list = [
+      `Нагнут ${ins}`,
+      `На коленях перед ${ins}`,
+      `В позе перед ${ins}`,
+      `Сломлен ${ins}`,
+      `Склонился перед ${ins}`,
+      `У ног ${gen}`,
+      `Покорился ${ins}`,
+    ];
+    return list[Math.floor(Math.random() * list.length)];
+  }
+
+  if (/обесчест|опозор/.test(t)) {
+    const list = [
+      `Обесчещен ${ins}`,
+      `Опозорен ${ins}`,
+      `Без чести перед ${ins}`,
+      `Слуга ${gen}`,
+      `В стыде перед ${ins}`,
+    ];
+    return list[Math.floor(Math.random() * list.length)];
+  }
+
+  // General procedural humiliation titles incorporating player nickname
+  const list = [
+    `Отсосал у ${gen}`,
+    `Пососал у ${gen}`,
+    `На коленях перед ${ins}`,
+    `У ног ${gen}`,
+    `Слуга ${gen}`,
+    `Вассал ${gen}`,
+    `Повержен ${ins}`,
+    `Растоптан ${ins}`,
+    `В рабстве у ${gen}`,
+    `Склонился перед ${ins}`,
+    `Покорился воле ${gen}`,
+    `Унижен ${ins}`,
+    `Шнырь ${gen}`,
+    `Дрожит перед ${ins}`,
+    `Молит о пощаде перед ${ins}`,
+    `Пал перед ${ins}`,
+    `Под пятой ${gen}`,
+    `Шестёрка ${gen}`,
+    `Игрушка ${gen}`,
+  ];
+  return list[Math.floor(Math.random() * list.length)];
+}
+
+export function localDecree(prompt: string, casterName = 'Командир'): Decree | null {
+  const text = prompt.toLowerCase().replaceAll('ё', 'е').trim();
+  if (directVictory(text)) return null;
+  if (/(?:удали|убери|скрой|отключи).*сообщени/.test(text))
+    return { kind: 'messages', target: 'everyone', amount: 0 };
+  const parts = text
+    .split(
+      /\s*(?:;|\n|,\s*(?:а\s+)?затем\s+|\s+и\s+(?=уничтож|дай|добав|ускор|замороз|захват))\s*/,
+    )
+    .filter(Boolean);
+  if (parts.length > 1) {
+    const actions = parts.map((p) => localDecree(p, casterName));
+    if (actions.every((x): x is Action => !!x && x.kind !== 'batch'))
+      return { kind: 'batch', actions };
+    return null;
+  }
+  const isMining =
+    /(?:шахт|золот\S*\s*рудник|рудник|прииск|коп[ией])/.test(text) &&
+    !/(?:золот\S*\s*\d|\d\s*золот|монет)/.test(text);
+  const isLumber = /(?:лесопил|лесоруб|древесн\S*\s*здан|пилорам)/.test(text);
+  const isBarracks = /казарм/.test(text);
+  const isEconomy =
+    (isMining && isLumber) ||
+    /(?:ресурсн\S*\s*здан|все добыва|экономик)/.test(text);
+
+  const teamPrefix: 'red' | 'purple' | 'green' | 'you' | 'enemy' | null =
+    /красн|бот 1/.test(text)
+      ? 'red'
+      : /фиолет|бот 2/.test(text)
+        ? 'purple'
+        : /зелен|бот 3/.test(text)
+          ? 'green'
+          : /мо[еяи]|моих|сво[еяи]|наш[еяи]/.test(text)
+            ? 'you'
+            : /враг|враж|противник/.test(text)
+              ? 'enemy'
+              : null;
+
+  let target: Target;
+  if (teamPrefix) {
+    if (isEconomy) target = `${teamPrefix}_economy` as Target;
+    else if (isMining) target = `${teamPrefix}_mines` as Target;
+    else if (isLumber) target = `${teamPrefix}_sawmills` as Target;
+    else if (isBarracks) target = `${teamPrefix}_barracks` as Target;
+    else
+      target =
+        teamPrefix === 'you'
+          ? 'all'
+          : teamPrefix === 'enemy'
+            ? 'enemies'
+            : teamPrefix;
+  } else {
+    if (isEconomy) target = 'economy';
+    else if (isMining) target = 'mines';
+    else if (isLumber) target = 'sawmills';
+    else if (isBarracks) target = 'barracks';
+    else if (/нейтрал/.test(text)) target = 'neutral';
+    else if (/главн|штаб|баз/.test(text)) target = 'main';
+    else if (/вообще все|всех игроков/.test(text)) target = 'everyone';
+    else target = 'all';
+  }
+  const match = text.match(/-?\d+(?:[.,]\d+)?/);
+  const amount = match ? Number(match[0].replace(',', '.')) : null;
+  let p: Action | null = null;
+  if (/аллах|акбар|камикадз|шахид|бабах|джихад/.test(text)) {
+    return {
+      kind: 'batch',
+      actions: [
+        { kind: 'reinforce', target: 'enemies', amount: -80 },
+        { kind: 'speed', target: 'enemies', amount: 0.5 },
+      ],
+    };
+  }
+  const renameMatch = text.match(
+    /(?:переименуй|назови|смени\s+имя|поменяй\s+имя)\s+(.+?)\s+(?:в|на)\s+([^,;]+)/i,
+  );
+  if (renameMatch) {
+    const rawTarget = renameMatch[1].trim();
+    const rawName = renameMatch[2].trim();
+    const parsedTarget: Target = /красн|бот 1/.test(rawTarget)
+      ? 'red'
+      : /фиолет|бот 2/.test(rawTarget)
+        ? 'purple'
+        : /зелен|бот 3/.test(rawTarget)
+          ? 'green'
+          : /меня|мое|себя|игрок/.test(rawTarget)
+            ? 'all'
+            : /штаб|главн/.test(rawTarget)
+              ? 'main'
+              : target;
+    const cleanName = rawName.charAt(0).toUpperCase() + rawName.slice(1);
+    return {
+      kind: 'rename',
+      target: parsedTarget,
+      amount: 1,
+      text: cleanName.slice(0, 30),
+    };
+  }
+  if (/дискотек|вечеринк|пати|рейв|танц/.test(text)) {
+    return { kind: 'party', target: 'everyone', amount: amount ?? 30 };
+  }
+  if (/бунт|паник|предательств|разверни|хаос/.test(text)) {
+    return {
+      kind: 'confuse',
+      target: target === 'all' ? 'enemies' : target,
+      amount: 1,
+    };
+  }
+  if (/почини|восстанови|отстрой|отремонтир/.test(text)) {
+    return { kind: 'repair', target, amount: 1 };
+  }
+  if (/ядерн|атомн|метеор|армагеддон/.test(text)) {
+    return {
+      kind: 'nuke',
+      target: target === 'all' ? 'enemies' : target,
+      amount: 1,
+    };
+  }
+  if (/сожги|выжги|в\s+пепел|в\s+угли|испепел|дотла/.test(text)) {
+    return { kind: 'burn', target, amount: 1 };
+  }
+  if (/взорви|подорви|взрыв\b|взорвать/.test(text)) {
+    return { kind: 'burn', target, amount: 1 };
+  }
+  if (/молни|гром|зевс|грозов/.test(text)) {
+    return {
+      kind: 'lightning',
+      target: target === 'all' ? 'enemies' : target,
+      amount: 1,
+    };
+  }
+  if (/зомби|мертвец|некромант|воскреси/.test(text)) {
+    return {
+      kind: 'zombie',
+      target: target === 'all' ? 'all' : target,
+      amount: 25,
+    };
+  }
+  if (/черн\S*\s*дыр|воронка|гравитац/.test(text)) {
+    return { kind: 'blackhole', target: 'everyone', amount: 20 };
+  }
+  if (/буран|метел|ледников|мерзлот|снежн\S*\s*бур|мороз|зима/.test(text)) {
+    return { kind: 'blizzard', target: 'everyone', amount: amount ?? 25 };
+  }
+  if (/мидас|золот\S*\s*лихорадк|вс[её]\s+в\s+золото/.test(text)) {
+    return {
+      kind: 'midas',
+      target: target === 'all' ? 'main' : target,
+      amount: 1,
+    };
+  }
+  if (/торнадо|смерч|ураган|вихрь/.test(text)) {
+    return { kind: 'tornado', target: 'everyone', amount: 1 };
+  }
+  if (/лягушк|жаб|квак|полиморф/.test(text)) {
+    return {
+      kind: 'polymorph',
+      target: target === 'all' ? 'enemies' : target,
+      amount: amount ?? 25,
+    };
+  }
+  if (/перемир|мирн\S*\s*договор|белый флаг|прекрати\S*\s*огонь|мир во всем мире/.test(text)) {
+    return { kind: 'peace', target: 'everyone', amount: amount ?? 25 };
+  }
+  if (/орбитальн|лазер|удар из космоса|спутник/.test(text)) {
+    return {
+      kind: 'orbital',
+      target: target === 'all' ? 'enemies' : target,
+      amount: 1,
+    };
+  }
+  if (/нло|пришельц|тарелк|похищен/.test(text)) {
+    return {
+      kind: 'alien',
+      target: target === 'all' ? 'enemies' : target,
+      amount: 15,
+    };
+  }
+  if (/титан|великан|гигант|громад/.test(text)) {
+    return {
+      kind: 'titans',
+      target: target === 'enemies' ? 'enemies' : 'all',
+      amount: amount ?? 30,
+    };
+  }
+  if (/(?:^|\s)(?:я\s+(?:тут\s+|здесь\s+)?лидер|я\s+(?:тут\s+)?главный|я\s+бог|я\s+царь|я\s+король|мы\s+лучшие|я\s+повелитель|я\s+батя)(?:\s|$|[.!?])/i.test(text)) {
+    const leaderTitles = [
+      'Лидер Долины',
+      `Владыка ${casterName}`,
+      `Царь ${casterName}`,
+      `Верховный ${casterName}`,
+      'Повелитель Долины',
+      `Гроза Долины`,
+    ];
+    const chosenLeader = leaderTitles[Math.floor(Math.random() * leaderTitles.length)];
+    return {
+      kind: 'batch',
+      actions: [
+        { kind: 'label', target: 'main', amount: 1, text: chosenLeader },
+        { kind: 'speed', target: 'all', amount: 1.3 },
+        { kind: 'gold', target: 'all', amount: 250 },
+      ],
+    };
+  }
+  if (/выеб|обесчест|трахн|обосс|нагн|опуст|натянул|раком|сучк|размаз|растопт|на колени|отсос|сос[уи]|сосите|посос/.test(text)) {
+    if (target === 'enemies' || target === 'all') {
+      const enemyTargets: Target[] = ['red', 'purple', 'green'];
+      const usedTitles = new Set<string>();
+      const labelActions: Action[] = enemyTargets.map((t) => {
+        let title = generateProceduralTaunt(casterName, text);
+        for (let i = 0; i < 6 && usedTitles.has(title); i++) {
+          title = generateProceduralTaunt(casterName, text);
+        }
+        usedTitles.add(title);
+        return { kind: 'label', target: t, amount: 1, text: title };
+      });
+      return {
+        kind: 'batch',
+        actions: [
+          ...labelActions,
+          { kind: 'speed', target: 'enemies', amount: 0.65 },
+          { kind: 'reinforce', target: 'main', amount: 25 },
+        ],
+      };
+    }
+    const chosen = generateProceduralTaunt(casterName, text);
+    return {
+      kind: 'batch',
+      actions: [
+        { kind: 'label', target, amount: 1, text: chosen },
+        { kind: 'speed', target, amount: 0.65 },
+        { kind: 'reinforce', target: 'main', amount: 25 },
+      ],
+    };
+  }
+  else if (/(?:золот|монет)/.test(text) && amount !== null && !isMining)
+    p = { kind: 'gold', target: target === 'main' ? 'all' : target, amount };
+  else if (/(?:древес|дерев|ресурс)/.test(text) && amount !== null && !isLumber)
+    p = {
+      kind: 'resources',
+      target: target === 'main' ? 'all' : target,
+      amount,
+    };
+  else if (
+    /(?:теперь мои|сделай моими|переман|захват|передай мне|под мой контроль|\bмои\b|\bмоими\b|\bмне\b|\bзабери|\bприсвой)/.test(
+      text,
+    )
+  )
+    p = { kind: 'transfer', target, amount: 1 };
+  else if (/уничтож|убей|сотри|убери|ликвидируй|снеси|взорви/.test(text))
+    p = { kind: 'destroy', target, amount: 1 };
+  else if (/замороз|останов/.test(text))
+    p = { kind: 'freeze', target, amount: amount ?? 30 };
+  else if (/бессмерт|неуязвим|щит/.test(text)) {
+    const isForever = /(?:до\s+конца|навсегда|вечн)/.test(text);
+    p = {
+      kind: 'shield',
+      target:
+        target === 'enemies'
+          ? 'enemies'
+          : target === 'main'
+            ? 'main'
+            : 'all',
+      amount: isForever ? 1000 : (amount ?? 240),
+    };
+  }
+  else if (/прирост|производ|генер|рожда/.test(text))
+    p = {
+      kind: 'growth',
+      target: target === 'main' ? 'all' : target,
+      amount: amount ?? 2,
+    };
+  else if (/скорост|ускор|быстр|замедл/.test(text))
+    p = {
+      kind: 'speed',
+      target: target === 'main' ? 'all' : target,
+      amount: amount ?? (/замедл/.test(text) ? 0.5 : 2),
+    };
+  else if (/удво|утро|умнож/.test(text))
+    p = {
+      kind: 'multiply',
+      target,
+      amount: amount ?? (/утро/.test(text) ? 3 : 2),
+    };
+  else if (/дай|добав|прибав|увелич|\+|подкреп/.test(text) && amount !== null)
+    p = { kind: 'reinforce', amount, target };
+  else if (target !== 'all' && /мо[еяи]/.test(text)) {
+    p = { kind: 'transfer', target, amount: 1 };
+  }
+  return p && validDecree(p) ? p : null;
+}
+
+export function describeTarget(target: Target): string {
+  if (typeof target === 'number') return `Здание №${target + 1}`;
+  const s = String(target);
+  if (s.includes('_')) {
+    const [teamPart, kindPart] = s.split('_');
+    const teamName =
+      teamPart === 'red'
+        ? 'Красных'
+        : teamPart === 'purple'
+          ? 'Фиолетовых'
+          : teamPart === 'green'
+            ? 'Зелёных'
+            : teamPart === 'you'
+              ? 'свои'
+              : 'врагов';
+    const kindName =
+      kindPart === 'mines' || kindPart === 'gold'
+        ? 'шахты'
+        : kindPart === 'sawmills' || kindPart === 'lumber'
+          ? 'лесопилки'
+          : kindPart === 'economy'
+            ? 'все ресурсные здания'
+            : 'казармы';
+    return `${kindName} (${teamName})`;
+  }
+  switch (target) {
+    case 'all': return 'Все свои войска и базы';
+    case 'main': return 'Главный штаб игрока';
+    case 'red': return 'Красные (Бот 1)';
+    case 'purple': return 'Фиолетовые (Бот 2)';
+    case 'green': return 'Зелёные (Бот 3)';
+    case 'enemies': return 'Все противники';
+    case 'everyone': return 'Все игроки и нейтралы';
+    case 'neutral': return 'Нейтральные здания';
+    case 'mines':
+    case 'gold': return 'Золотые шахты';
+    case 'sawmills':
+    case 'lumber': return 'Лесопилки';
+    case 'economy': return 'Все ресурсные здания';
+    case 'barracks': return 'Казармы';
+    default: return String(target);
+  }
+}
+
+export function describeAction(a: Action): string {
+  const t = describeTarget(a.target);
+  switch (a.kind) {
+    case 'burn': return `🔥 Сожжение дотла в тлеющие угли [цель: ${t}]`;
+    case 'nuke': return `☢️ Ядерный удар с сотрясением [цель: ${t}]`;
+    case 'explode': return `💥 Мощный подрыв позиций [цель: ${t}]`;
+    case 'orbital': return `🛰️ Орбитальный лазерный залп [цель: ${t}]`;
+    case 'destroy': return `💣 Уничтожение укреплений [цель: ${t}]`;
+    case 'transfer': return `🚩 Переход под контроль игрока [цель: ${t}]`;
+    case 'capture': return `🏰 Захват зданий [цель: ${t}]`;
+    case 'lightning': return `⚡ Громовой шторм Зевса [цель: ${t}]`;
+    case 'zombie': return `🧟 Нашествие орды нежити (${a.amount ?? 25} зомби) [цель: ${t}]`;
+    case 'blackhole': return `🕳️ Черная дыра поглощает войска [цель: ${t}]`;
+    case 'blizzard': return `❄️ Ледниковый буран замораживает на ${a.amount ?? 25}с [цель: ${t}]`;
+    case 'midas': return `✨ Прикосновение Мидаса (обращение в золото) [цель: ${t}]`;
+    case 'tornado': return `🌪️ Разрушительный смерч разметал войска [цель: ${t}]`;
+    case 'polymorph': return `🐸 Превращение в лягушек на ${a.amount ?? 25}с [цель: ${t}]`;
+    case 'peace': return `🕊️ Священное перемирие на ${a.amount ?? 25}с [цель: ${t}]`;
+    case 'alien': return `🛸 Похищение войск пришельцами [цель: ${t}]`;
+    case 'titans': return `🔱 Пробуждение титанов на ${a.amount ?? 30}с [цель: ${t}]`;
+    case 'shield': return `🛡️ Непробиваемый щит на ${a.amount ?? 30}с [цель: ${t}]`;
+    case 'freeze': return `🧊 Полная заморозка на ${a.amount ?? 30}с [цель: ${t}]`;
+    case 'party': return `🎉 Дискотека на поле боя на ${a.amount ?? 30}с`;
+    case 'confuse': return `🌀 Бунт и разворот бегущих отрядов [цель: ${t}]`;
+    case 'repair': return `🔨 Восстановление разрушенных зданий [цель: ${t}]`;
+    case 'rename': return `🏷️ Переименование в "${a.text ?? ''}" [цель: ${t}]`;
+    case 'label': return `👑 Статус над штабом: "${a.text ?? ''}" [цель: ${t}]`;
+    case 'reinforce': return `👥 Подкрепление: ${a.amount >= 0 ? '+' : ''}${a.amount} бойцов [цель: ${t}]`;
+    case 'gold': return `💰 Золото: ${a.amount >= 0 ? '+' : ''}${a.amount} [цель: ${t}]`;
+    case 'resources': return `🪵 Древесина: ${a.amount >= 0 ? '+' : ''}${a.amount} [цель: ${t}]`;
+    case 'speed': return `👟 Скорость бега: ×${a.amount} [цель: ${t}]`;
+    case 'growth': return `📈 Прирост гарнизона: ×${a.amount} [цель: ${t}]`;
+    case 'upgrade': return `⭐ Уровень зданий повышен до ${a.amount} [цель: ${t}]`;
+    case 'set': return `🔢 Численность гарнизона установлена в ${a.amount} [цель: ${t}]`;
+    case 'multiply': return `✖️ Гарнизоны умножены на ${a.amount} [цель: ${t}]`;
+    case 'messages': return a.amount === 0 ? '💬 Облачка сообщений скрыты' : '💬 Облачка сообщений включены';
+    default: return `${a.kind} [цель: ${t}, кол-во: ${a.amount}]`;
+  }
+}
+
+export function describeDecree(d: Decree): string[] {
+  if (d.kind === 'batch') {
+    return d.actions.map(describeAction);
+  }
+  return [describeAction(d)];
+}
