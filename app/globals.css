@@ -80,12 +80,12 @@ html,body{background:#a3ce57 url('/assets/battlefield.png') center/cover fixed n
 @media(max-width:600px){.replay-mines{top:180px;gap:5px}.replay-mines section{padding:5px}.replay-mines small{font-size:9px}}
 
 /* Shared notification flow reserves the side HUD and prevents toast collisions. */
-.war-shell .hud-notifications{position:absolute;z-index:175;top:110px;left:50%;transform:translateX(-50%);width:min(360px,calc(100% - 430px));max-height:calc(65dvh - 120px);display:flex;flex-direction:column;align-items:stretch;gap:8px;overflow:auto;pointer-events:none}
-.war-shell .hud-notifications :is(.battle-notice,.event-notice,.spell-toast,.curse-toast){position:static;inset:auto;transform:none;width:100%;max-width:none;min-width:0;margin:0;flex-shrink:0;white-space:normal;overflow-wrap:anywhere}
+.war-shell .hud-notifications{position:absolute;z-index:175;top:110px;left:50%;transform:translateX(-50%);width:min(440px,calc(100vw - 32px));max-width:min(440px,calc(100vw - 32px));max-height:calc(65dvh - 120px);display:flex;flex-direction:column;align-items:stretch;gap:8px;overflow-y:auto;overflow-x:hidden;pointer-events:none}
+.war-shell .hud-notifications :is(.battle-notice,.event-notice,.spell-toast,.curse-toast){position:static;inset:auto;transform:none;width:100%;max-width:100%;min-width:0;margin:0;flex-shrink:0;white-space:normal;overflow-wrap:anywhere;box-sizing:border-box}
 .war-shell .hud-notifications .event-notice{pointer-events:auto}.war-shell .hud-notifications .battle-notice p{font-size:11px;line-height:1.4}.hud-notifications .captured-count{display:none}
 .war-shell:has(.game-overlay) .hud-notifications{visibility:hidden}
 .spell-toast,.rival-roulette{color:#49301e;text-shadow:none;background:#fff1d9}.spell-toast :is(b,small,p),.rival-roulette :is(b,p){color:#49301e}.roulette-disc{color:#382719;text-shadow:none}.rival-roulette p.chosen{background:#e7d1ed;color:#36223f}.rival-roulette strong{filter:brightness(.65)}
-@media(max-width:600px){.war-shell .hud-notifications{top:158px;left:8px;transform:none;width:calc(100% - 132px);max-height:calc(65dvh - 170px);gap:5px}.war-shell .hud-notifications .spell-toast{padding:8px;gap:7px}.hud-notifications .roulette-disc{width:32px;height:32px;font-size:19px}.war-shell .hud-notifications .curse-toast{font-size:10px}}
+@media(max-width:600px){.war-shell .hud-notifications{top:135px;left:50%;transform:translateX(-50%);width:min(380px,calc(100vw - 20px));max-width:min(380px,calc(100vw - 20px));max-height:calc(65dvh - 150px);overflow-x:hidden;gap:5px}.war-shell .hud-notifications .spell-toast{padding:8px;gap:7px}.hud-notifications .roulette-disc{width:32px;height:32px;font-size:19px}.war-shell .hud-notifications .curse-toast{font-size:10px}}
 
 .troop-canvas{position:absolute;inset:0;width:100%;height:100%;z-index:140;pointer-events:none}
 
@@ -2539,8 +2539,10 @@ body,
   display: flex !important;
   align-items: flex-start !important;
   gap: 12px !important;
-  max-width: 440px !important;
-  width: min(440px, 92vw) !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  box-sizing: border-box !important;
+  overflow: hidden !important;
 }
 
 .roulette-disc-wrap {
@@ -2548,6 +2550,7 @@ body,
   align-items: center;
   justify-content: center;
   padding-top: 4px;
+  flex-shrink: 0;
 }
 
 .roulette-disc.pure {
@@ -2570,6 +2573,7 @@ body,
   display: flex;
   flex-direction: column;
   gap: 5px;
+  overflow: hidden;
 }
 
 .roulette-top-badge {
@@ -2596,6 +2600,7 @@ body,
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
   gap: 6px;
   margin-top: 1px;
 }
@@ -2607,11 +2612,13 @@ body,
 }
 
 .roulette-outcome-badge {
-  font-size: 10.5px;
+  font-size: 10px;
   font-weight: 700;
   padding: 2px 7px;
   border-radius: 6px;
-  white-space: nowrap;
+  white-space: normal;
+  word-break: break-word;
+  max-width: 100%;
 }
 
 .roulette-outcome-badge.pure {
@@ -2637,11 +2644,16 @@ body,
   display: flex;
   flex-direction: column;
   gap: 4px;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  overflow: hidden;
 }
 
 .roulette-hero-badges {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 6px;
 }
 
