@@ -118,6 +118,7 @@ export type Game = {
   peaceUntil?: number;
   alienUntil?: number;
   titansUntil?: number;
+  revealUntil?: number;
   lightningStrikes?: { id: number; at: number }[];
   burningRule?: { team: Team; until: number };
   replayRoulette?: {
@@ -1032,7 +1033,7 @@ export function sendScout(
 }
 export function economicLeader(g: Game): Team | null {
   const ranked = TEAM_IDS.filter((team) =>
-    g.towers.some((t) => t.team === team),
+    g.towers.some((t) => t.team === team && t.ruinedAt === undefined),
   )
     .map((team) => ({ team, n: Math.floor(g.wallets[team].earned) }))
     .sort((a, b) => b.n - a.n);
@@ -1101,7 +1102,7 @@ export function tick(previous: Game, dt = 0.05): Game {
       t.stockGold = 0;
       t.stockWood = 0;
     }
-    if (!t.team || (g.frozen?.[t.team] ?? 0) > g.age) continue;
+    if (!t.team || t.ruinedAt !== undefined || (g.frozen?.[t.team] ?? 0) > g.age) continue;
     const w = g.wallets[t.team],
       earn = income(t);
     const efficiency =
@@ -1707,21 +1708,24 @@ export function tick(previous: Game, dt = 0.05): Game {
 
   // Elimination victory (checked continuously every tick)
   const teamsWithTowers = TEAM_IDS.filter((team) =>
-    g.towers.some((t) => t.team === team),
+    g.towers.some((t) => t.team === team && t.ruinedAt === undefined),
   );
   if (teamsWithTowers.length === 1) {
     const candidate = teamsWithTowers[0];
-    const enemyTroops = g.troops.filter((p) => p.team !== candidate);
-    if (enemyTroops.length === 0 || g.towers.every((t) => !t.team || t.team === candidate)) {
-      g.result = candidate;
-    }
+    g.troops = g.troops.filter((p) => p.team === candidate);
+    g.result = candidate;
+  } else if (teamsWithTowers.length === 0) {
+    g.result = 'draw';
   } else {
     const alive = TEAM_IDS.filter(
       (team) =>
-        g.towers.some((t) => t.team === team) ||
+        g.towers.some((t) => t.team === team && t.ruinedAt === undefined) ||
         g.troops.some((p) => p.team === team),
     );
-    if (alive.length === 1) g.result = alive[0];
+    if (alive.length === 1) {
+      g.troops = g.troops.filter((p) => p.team === alive[0]);
+      g.result = alive[0];
+    }
   }
   if (g.elapsed >= DURATION && !g.result)
     g.result = economicLeader(g) ?? 'draw';
@@ -1845,11 +1849,6 @@ export function applyDecree(
     } else if (a.kind === 'destroy' || a.kind === 'burn' || a.kind === 'nuke' || a.kind === 'explode' || a.kind === 'orbital') {
       const destroyedNames: string[] = [];
       for (const t of targets) {
-        if (t.home && t.team && t.team !== team) {
-          t.count = Math.max(5, Math.min(t.count, 8));
-          t.ruinedAt = next.age;
-          continue;
-        }
         t.team = null;
         t.count = 0;
         t.home = undefined;
@@ -1863,6 +1862,13 @@ export function applyDecree(
       ];
       next.troops = next.troops.filter((p) => !troopMatches(p));
       next.routes = next.routes.filter((r) => !affected.includes(r.team));
+      for (const tm of TEAM_IDS) {
+        if (!next.towers.some((t) => t.team === tm && t.ruinedAt === undefined)) {
+          next.troops = next.troops.filter((p) => p.team !== tm);
+          next.routes = next.routes.filter((r) => r.team !== tm);
+          next.automation = next.automation.filter((a) => a.team !== tm);
+        }
+      }
       if (a.kind === 'nuke' || a.kind === 'orbital' || a.kind === 'explode') {
         next.screenShakeUntil = next.age + 3.5;
       }
@@ -1979,6 +1985,11 @@ export function applyDecree(
         }
       }
       log.push(`Ваши воины обращены в могучих Титанов на ${dur} с! 👑`);
+    } else if (a.kind === 'reveal') {
+      const dur = a.amount || 60;
+      next.revealUntil = next.age + dur;
+      log.push(`Туман войны рассеялся над всей долиной на ${dur} с! 👁️`);
+      next.notice = `👁️ Туман войны рассеян на ${dur} с!`;
     } else if (a.kind === 'repair') {
       let restoredCount = 0;
       for (const t of targets) {
@@ -2182,11 +2193,6 @@ export function forceApplyDecreeWithLog(
     } else if (a.kind === 'destroy' || a.kind === 'burn' || a.kind === 'nuke' || a.kind === 'explode' || a.kind === 'orbital') {
       const destroyedNames: string[] = [];
       for (const t of targets) {
-        if (t.home && t.team && t.team !== team) {
-          t.count = Math.max(5, Math.min(t.count, 8));
-          t.ruinedAt = next.age;
-          continue;
-        }
         t.team = null;
         t.count = 0;
         t.home = undefined;
@@ -2200,6 +2206,13 @@ export function forceApplyDecreeWithLog(
       ];
       next.troops = next.troops.filter((p) => !troopMatches(p));
       next.routes = next.routes.filter((r) => !affected.includes(r.team));
+      for (const tm of TEAM_IDS) {
+        if (!next.towers.some((t) => t.team === tm && t.ruinedAt === undefined)) {
+          next.troops = next.troops.filter((p) => p.team !== tm);
+          next.routes = next.routes.filter((r) => r.team !== tm);
+          next.automation = next.automation.filter((a) => a.team !== tm);
+        }
+      }
       if (a.kind === 'nuke' || a.kind === 'orbital' || a.kind === 'explode') {
         next.screenShakeUntil = next.age + 3.5;
       }
@@ -2316,6 +2329,11 @@ export function forceApplyDecreeWithLog(
         }
       }
       log.push(`Ваши воины обращены в могучих Титанов на ${dur} с! 👑`);
+    } else if (a.kind === 'reveal') {
+      const dur = a.amount || 60;
+      next.revealUntil = next.age + dur;
+      log.push(`Туман войны рассеялся над всей долиной на ${dur} с! 👁️`);
+      next.notice = `👁️ Туман войны рассеян на ${dur} с!`;
     } else if (a.kind === 'repair') {
       let restoredCount = 0;
       for (const t of targets) {

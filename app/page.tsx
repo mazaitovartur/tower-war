@@ -213,8 +213,10 @@ export default function Home() {
   const [devOpen, setDevOpen] = useState(false);
   const [exploredTowers, setExploredTowers] = useState<Set<number>>(() => new Set([0]));
 
+  const isFogCleared = !!(game.revealUntil && game.revealUntil > game.age);
+
   const activeVisionTowers = useMemo(() => {
-    if (!fogEnabled) {
+    if (!fogEnabled || isFogCleared) {
       return new Set(game.towers.map((t) => t.id));
     }
     const inVision = new Set<number>();
@@ -242,10 +244,14 @@ export default function Home() {
       }
     }
     return inVision;
-  }, [game.towers, game.troops, fogEnabled]);
+  }, [game.towers, game.troops, fogEnabled, isFogCleared, myTeam]);
 
   useEffect(() => {
     if (!fogEnabled) return;
+    if (isFogCleared) {
+      setExploredTowers(new Set(game.towers.map((t) => t.id)));
+      return;
+    }
     if (game.age < 0.25) {
       setExploredTowers(new Set(activeVisionTowers));
     } else if (activeVisionTowers.size > 0) {
@@ -261,7 +267,7 @@ export default function Home() {
         return changed ? next : prev;
       });
     }
-  }, [activeVisionTowers, game.age, fogEnabled]);
+  }, [activeVisionTowers, game.age, fogEnabled, isFogCleared, game.towers]);
 
   useEffect(() => {
     try {
@@ -1666,7 +1672,7 @@ export default function Home() {
         }}
       >
         {game.towers
-          .filter((t) => !fogEnabled || exploredTowers.has(t.id))
+          .filter((t) => !fogEnabled || isFogCleared || exploredTowers.has(t.id))
           .map((t) => (
             <i
               key={t.id}
@@ -1847,7 +1853,7 @@ export default function Home() {
               width={WORLD_WIDTH}
               height={WORLD_HEIGHT}
               theme={mapTheme}
-              enabled={fogEnabled}
+              enabled={fogEnabled && !isFogCleared}
               gameAge={game.age}
               myTeam={myTeam}
             />
@@ -1885,6 +1891,7 @@ export default function Home() {
                   .filter(
                     (r) =>
                       !fogEnabled ||
+                      isFogCleared ||
                       (exploredTowers.has(r.from) && exploredTowers.has(r.to)),
                   )
                   .map((r) => {
@@ -2247,7 +2254,7 @@ export default function Home() {
           >
             {speech ? <Volume2 size={18} /> : <VolumeX size={18} />} Реплики
           </button>
-          <TroopLayer game={game} camera={camera} viewport={viewport} speech={speech} paused={paused || help} fogEnabled={fogEnabled} myTeam={myTeam} />
+          <TroopLayer game={game} camera={camera} viewport={viewport} speech={speech} paused={paused || help} fogEnabled={fogEnabled && !isFogCleared} myTeam={myTeam} />
           {!recording && (paused || help || game.result) && (
             <div className="game-overlay">
               <section className={`overlay-card ${game.result ? 'victory-card' : ''}`}>

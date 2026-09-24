@@ -52,7 +52,8 @@ export type Action = {
     | 'peace'
     | 'orbital'
     | 'alien'
-    | 'titans';
+    | 'titans'
+    | 'reveal';
   amount: number;
   target: Target;
   text?: string;
@@ -97,6 +98,7 @@ function validAction(value: unknown): value is Action {
       'orbital',
       'alien',
       'titans',
+      'reveal',
     ].includes(p.kind) ||
     !Number.isFinite(p.amount) ||
     Math.abs(p.amount) > 1e9
@@ -159,6 +161,7 @@ function validAction(value: unknown): value is Action {
       'orbital',
       'alien',
       'titans',
+      'reveal',
     ].includes(p.kind) &&
     p.amount < 0
   )
@@ -539,6 +542,25 @@ export function localDecree(prompt: string, casterName = 'Командир'): De
       amount: amount ?? 30,
     };
   }
+  if (/(?:туман|развей|рассей|открой\s+карт|раскрой\s+карт|покажи\s+карт|всю\s+карт|разведк|шпион|радар|просвет|свет|видимост)/.test(text)) {
+    return { kind: 'reveal', target: 'everyone', amount: amount ?? 60 };
+  }
+  if (/(?:атак|штурм|напад|в\s+бой|наступлен|раздав|натиск)/.test(text)) {
+    return {
+      kind: 'batch',
+      actions: [
+        { kind: 'speed', target: 'all', amount: 1.8 },
+        { kind: 'reinforce', target: 'all', amount: 30 },
+      ],
+    };
+  }
+  if (/(?:защит|оборон|укреп|брон|стен|бастион|цитадел)/.test(text)) {
+    return {
+      kind: 'shield',
+      target: target === 'enemies' ? 'enemies' : target === 'main' ? 'main' : 'all',
+      amount: amount ?? 120,
+    };
+  }
   if (/(?:^|\s)(?:я\s+(?:тут\s+|здесь\s+)?лидер|я\s+(?:тут\s+)?главный|я\s+бог|я\s+царь|я\s+король|мы\s+лучшие|я\s+повелитель|я\s+батя)(?:\s|$|[.!?])/i.test(text)) {
     const leaderTitles = [
       'Лидер Долины',
@@ -589,23 +611,23 @@ export function localDecree(prompt: string, casterName = 'Командир'): De
       ],
     };
   }
-  else if (/(?:золот|монет)/.test(text) && !isMining)
+  else if (/(?:золот|монет|деньг|денег|бабл|богатств|казн|финанс)/.test(text) && !isMining)
     p = { kind: 'gold', target: target === 'main' ? 'all' : target, amount: amount ?? 200 };
-  else if (/(?:древес|дерев|ресурс)/.test(text) && !isLumber)
+  else if (/(?:древес|дерев|ресурс|лес\b|материал|доск)/.test(text) && !isLumber)
     p = {
       kind: 'resources',
       target: target === 'main' ? 'all' : target,
       amount: amount ?? 150,
     };
   else if (
-    /(?:теперь мои|сделай моими|переман|захват|передай мне|под мой контроль|\bмои\b|\bмоими\b|\bмне\b|\bзабери|\bприсвой|хочу\s+вс)/.test(
+    /(?:теперь мои|сделай моими|переман|захват|передай мне|под мой контроль|\bмои\b|\bмоими\b|\bмне\b|\bзабери|\bприсвой|хочу\s+вс|завоюй|покори)/.test(
       text,
     )
   )
     p = { kind: 'transfer', target: target === 'all' ? 'enemies' : target, amount: 1 };
-  else if (/уничтож|убей|сотри|убери|ликвидируй|снеси|взорви|разруш|казни/.test(text))
+  else if (/уничтож|убей|сотри|убери|ликвидируй|снеси|взорви|разруш|казни|смерть|взорвать|бомб|подорви|сожги|испепел|выжги/.test(text))
     p = { kind: 'destroy', target: target === 'all' ? 'enemies' : target, amount: 1 };
-  else if (/замороз|останов|стан|обездвиж/.test(text))
+  else if (/замороз|останов|стан|обездвиж|лед\b|льдом|холод|паралич|тормоз/.test(text))
     p = { kind: 'freeze', target: target === 'all' ? 'enemies' : target, amount: amount ?? 30 };
   else if (/бессмерт|неуязвим|щит|защит/.test(text)) {
     const isForever = /(?:до\s+конца|навсегда|вечн)/.test(text);
@@ -620,25 +642,37 @@ export function localDecree(prompt: string, casterName = 'Командир'): De
       amount: isForever ? 1000 : (amount ?? 120),
     };
   }
-  else if (/прирост|производ|генер|рожда/.test(text))
+  else if (/прирост|производ|генер|рожда|плодитесь/.test(text))
     p = {
       kind: 'growth',
       target: target === 'main' ? 'all' : target,
       amount: amount ?? 2,
     };
-  else if (/скорост|ускор|быстр|замедл/.test(text))
+  else if (/скорост|ускор|быстр|бегом|марш|турбо|форсаж|газ\b/.test(text))
     p = {
       kind: 'speed',
       target: target === 'main' ? 'all' : target,
-      amount: amount ?? (/замедл/.test(text) ? 0.5 : 1.5),
+      amount: amount ?? 1.5,
     };
-  else if (/удво|утро|умнож/.test(text))
+  else if (/замедл|улитк|черепах/.test(text))
+    p = {
+      kind: 'speed',
+      target: target === 'main' ? 'all' : target,
+      amount: amount ?? 0.5,
+    };
+  else if (/удво|утро|умнож|х2|х3/.test(text))
     p = {
       kind: 'multiply',
       target,
-      amount: amount ?? (/утро/.test(text) ? 3 : 2),
+      amount: amount ?? (/утро|х3/.test(text) ? 3 : 2),
     };
-  else if (/войск|арми|солдат|людей|человек|сил\b|подкрепл|дай|добав|прибав|увелич|\+/.test(text))
+  else if (/апгрейд|улучш|прокач|повысь|максимальн\S*\s*уровен/.test(text))
+    p = { kind: 'upgrade', target: target === 'all' ? 'all' : target, amount: amount ?? 5 };
+  else if (/почин|восстанов|отстрой|отремонтир|исцел|вылеч|ремонт|лечени/.test(text))
+    p = { kind: 'repair', target: target === 'all' ? 'all' : target, amount: 1 };
+  else if (/продли|добавь\s+врем|таймер/.test(text))
+    p = { kind: 'time', target: 'everyone', amount: amount ?? 60 };
+  else if (/войск|арми|солдат|людей|люди|пехот|человек|сил\b|подкрепл|дай|добав|прибав|увелич|\+|воин|юнит/.test(text))
     p = { kind: 'reinforce', amount: amount ?? 30, target: target === 'all' ? 'all' : target };
   else if (target !== 'all' && /мо[еяи]/.test(text)) {
     p = { kind: 'transfer', target, amount: 1 };
@@ -719,6 +753,7 @@ export function describeAction(a: Action): string {
     case 'peace': return `🕊️ Священное перемирие на ${a.amount ?? 25}с [цель: ${t}]`;
     case 'alien': return `🛸 Похищение войск пришельцами [цель: ${t}]`;
     case 'titans': return `🔱 Пробуждение титанов на ${a.amount ?? 30}с [цель: ${t}]`;
+    case 'reveal': return `👁️ Развеять туман войны на ${a.amount ?? 60}с [цель: ${t}]`;
     case 'shield': return `🛡️ Непробиваемый щит на ${a.amount ?? 30}с [цель: ${t}]`;
     case 'freeze': return `🧊 Полная заморозка на ${a.amount ?? 30}с [цель: ${t}]`;
     case 'party': return `🎉 Дискотека на поле боя на ${a.amount ?? 30}с`;
