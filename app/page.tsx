@@ -423,7 +423,6 @@ export default function Home() {
   }, [game.authorityEpoch, paused, help, started]);
   const messageMode = !recording && messageOpportunity(game);
   useEffect(() => {
-    setDraft('');
     setTypingDeadline(0);
     setTypingSeconds(20);
   }, [messageMode]);
@@ -434,8 +433,6 @@ export default function Home() {
       setTypingSeconds(left);
       if (left === 0) {
         setTypingDeadline(0);
-        setDraft('');
-        setPromptMessage('Время вышло! Наберите новый приказ за 10 секунд.');
       }
     };
     update();
@@ -445,7 +442,6 @@ export default function Home() {
   useEffect(() => {
     setTypingDeadline(0);
     setTypingSeconds(20);
-    setDraft('');
   }, [game.authorityEpoch, started]);
   
   const prevCaptures = useRef(game.captures || 0);
@@ -1144,18 +1140,12 @@ export default function Home() {
   async function submitPrompt(e: React.FormEvent) {
     e.preventDefault();
     const current = gameRef.current;
-    if (!typingDeadline || Date.now() >= typingDeadline) {
-      setTypingDeadline(0);
-      setDraft('');
-      setPromptMessage('Время ввода истекло. Наберите приказ заново.');
-      return;
-    }
     if (recording || paused || help || current.result) return;
     if (current.age < DEVELOPMENT_SECONDS) return;
     const cooldownEnd = current.decreeCooldownUntil?.[myTeam] ?? 0;
     const cooldownLeft = Math.max(0, Math.ceil(cooldownEnd - current.age));
     if (cooldownLeft > 0) {
-      setPromptMessage(`Перезарядка указа: ещё ${cooldownLeft} с (доступно раз в 1.5 мин)`);
+      setPromptMessage(`Перезарядка указа: ещё ${cooldownLeft} с`);
       setPromptIsError(true);
       playError();
       return;
@@ -3269,19 +3259,6 @@ export default function Home() {
               </div>
               {hasCounter && (
                 <div className="roulette-counter-duel-row" style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                  {isRoulette ? (
-                    <div style={{ fontSize: '11px', fontWeight: 700, color: '#f59e0b', padding: '1px 2px' }}>
-                      🎲 Выбран вызов против Лидера (50% шанс победы · рулетка 6 с):
-                    </div>
-                  ) : candidates.length > 1 ? (
-                    <div style={{ fontSize: '11px', fontWeight: 700, color: '#f59e0b', padding: '1px 2px' }}>
-                      🎲 В очереди {candidates.length} анти-приказа · после 15 с рулетка выберет 1 и будет крутиться 6 с:
-                    </div>
-                  ) : (
-                    <div style={{ fontSize: '11px', fontWeight: 700, color: '#38bdf8', padding: '1px 2px' }}>
-                      ⚔️ Вызов принят · рулетка начнётся после окна ввода (через {timeLeft} с):
-                    </div>
-                  )}
                   {(isRoulette ? candidates.filter(c => c.team === counterTeam).slice(0, 1) : candidates).map((cand, idx) => (
                     <div key={cand.team + idx} style={{ width: '100%' }}>
                       {(!isRoulette && candidates.length > 1) && (
@@ -3538,54 +3515,21 @@ export default function Home() {
             const cooldownLeft = Math.max(0, Math.ceil(cooldownEnd - game.age));
             const isOnCooldown = isLeaderTurn && cooldownLeft > 0;
 
-            return (
-              <section
-                className={`wish-panel ${isAntiMode ? 'anti-mode granted' : isLeaderTurn ? (isOnCooldown ? 'granted cooldown-mode' : 'granted') : 'locked'}`}
-              >
-                <div className="wish-heading">
-                  <span className="wish-medal">
-                    {isAntiMode ? (
+            if (isAntiMode) {
+              return (
+                <section className="wish-panel anti-mode granted">
+                  <div className="wish-heading">
+                    <span className="wish-medal">
                       <span style={{ fontSize: 16 }}>⚔️</span>
-                    ) : isLeaderTurn ? (
-                      <Sparkles />
-                    ) : (
-                      <LockKeyhole />
-                    )}
-                  </span>
-                  <div>
-                    <span className="eyebrow">
-                      {isAntiMode
-                        ? 'АНТИ-ПРИКАЗ · ДУЭЛЬ 50/50'
-                        : 'ПРАВО ЛИДЕРА'}
                     </span>
-                    <h2>
-                      {isAntiMode
-                        ? 'Ваш анти-приказ'
-                        : game.result
-                          ? 'Битва завершена'
-                          : developing
-                            ? `Приказы через ${Math.floor(developmentLeft / 60)}:${String(developmentLeft % 60).padStart(2, '0')}`
-                            : game.authority === 'you'
-                              ? 'Ваш приказ'
-                              : game.authority
-                                ? `Лидер: ${playerName(game, game.authority)}`
-                                : 'Обгони соперников по заработку'}
-                    </h2>
+                    <div>
+                      <span className="eyebrow">АНТИ-ПРИКАЗ · ДУЭЛЬ 50/50</span>
+                      <h2>Ваш анти-приказ</h2>
+                    </div>
+                    <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span className="wish-status anti">⏳ {antiSecondsLeft} с</span>
+                    </div>
                   </div>
-                  <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <span className={`wish-status ${isAntiMode ? 'anti' : isOnCooldown ? 'cooldown' : ''}`}>
-                      {isAntiMode
-                        ? `⏳ ${antiSecondsLeft} с`
-                        : isLeaderTurn
-                          ? isOnCooldown
-                            ? `⏳ КД: ${Math.floor(cooldownLeft / 60)}:${String(cooldownLeft % 60).padStart(2, '0')}`
-                            : '👑 ВАША ВЛАСТЬ'
-                          : `${Math.floor(money.earned)} ОЧКОВ ЭКОНОМИКИ`}
-                    </span>
-                  </div>
-                </div>
-
-                {isAntiMode ? (
                   <form onSubmit={submitCounterPrompt}>
                     <div className="wish-input">
                       <textarea
@@ -3620,7 +3564,70 @@ export default function Home() {
                       </span>
                     </div>
                   </form>
-                ) : isLeaderTurn ? (
+                  {game.decreeLog[0] && (
+                    <div className="last-decree">
+                      <Sparkles size={14} />
+                      <span>
+                        Последний указ:{' '}
+                        <b style={{ color: TEAMS[game.decreeLog[0].team].color }}>
+                          {playerName(game, game.decreeLog[0].team)}
+                        </b>{' '}
+                        · {game.decreeLog[0].text}
+                      </span>
+                    </div>
+                  )}
+                </section>
+              );
+            }
+
+            if (isOnCooldown) {
+              return (
+                <section className="wish-panel locked">
+                  <div className="wish-heading">
+                    <span className="wish-medal">
+                      <LockKeyhole />
+                    </span>
+                    <div>
+                      <h2>Перезарядка указа: {cooldownLeft} с</h2>
+                      <p className="locked-description" style={{ margin: '2px 0 0', fontSize: '12px' }}>
+                        Ожидание готовности указа
+                      </p>
+                    </div>
+                    <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span className="wish-status cooldown">⏳ {cooldownLeft} с</span>
+                    </div>
+                  </div>
+                  {game.decreeLog[0] && (
+                    <div className="last-decree">
+                      <Sparkles size={14} />
+                      <span>
+                        Последний указ:{' '}
+                        <b style={{ color: TEAMS[game.decreeLog[0].team].color }}>
+                          {playerName(game, game.decreeLog[0].team)}
+                        </b>{' '}
+                        · {game.decreeLog[0].text}
+                      </span>
+                    </div>
+                  )}
+                </section>
+              );
+            }
+
+            if (isLeaderTurn) {
+              return (
+                <section className="wish-panel granted">
+                  <div className="wish-heading">
+                    <span className="wish-medal">
+                      <Sparkles />
+                    </span>
+                    <div>
+                      <span className="eyebrow">ПРАВО ЛИДЕРА</span>
+                      <h2>Ваш приказ</h2>
+                    </div>
+                    <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span className="wish-status">👑 ВАША ВЛАСТЬ</span>
+                    </div>
+                  </div>
                   <form onSubmit={submitPrompt}>
                     <label htmlFor="wish">
                       Меняй армии и правила. Нельзя только объявить: я победил.
@@ -3629,7 +3636,7 @@ export default function Home() {
                       <textarea
                         id="wish"
                         value={draft}
-                        disabled={paused || help || busy || !!game.spell || isOnCooldown}
+                        disabled={paused || help || busy || !!game.spell}
                         onPaste={blockPaste}
                         onDrop={blockPaste}
                         onDragOver={(e) => e.preventDefault()}
@@ -3653,28 +3660,24 @@ export default function Home() {
                           }
                           if (e.key === 'Enter' && !e.shiftKey) {
                             e.preventDefault();
-                            if (!paused && !help && !busy && !game.spell && !isOnCooldown && draft.trim()) {
+                            if (!paused && !help && !busy && !game.spell && draft.trim()) {
                               submitPrompt(e as unknown as React.FormEvent);
                             }
                           }
                         }}
                         onChange={(e) => {
-                          if (!typingDeadline) {
-                            setTypingDeadline(Date.now() + 20000);
-                            setTypingSeconds(20);
-                          }
                           if (promptIsError) setPromptIsError(false);
                           if (promptMessage) setPromptMessage('');
                           setDraft(e.target.value);
                         }}
                         maxLength={350}
                         rows={2}
-                        placeholder={isOnCooldown ? `Перезарядка указа: ${Math.floor(cooldownLeft / 60)}:${String(cooldownLeft % 60).padStart(2, '0')} (раз в 1.5 мин)` : "Введите приказ…"}
+                        placeholder="Введите приказ…"
                       />
                       <button
                         type="submit"
                         disabled={
-                          paused || help || busy || !!game.spell || isOnCooldown || !draft.trim()
+                          paused || help || busy || !!game.spell || !draft.trim()
                         }
                       >
                         <Send size={20} />
@@ -3683,27 +3686,16 @@ export default function Home() {
                     </div>
                     <div className="wish-meta">
                       <span>
-                        {isOnCooldown
-                          ? `⏳ Перезарядка указа: ещё ${Math.floor(cooldownLeft / 60)}:${String(cooldownLeft % 60).padStart(2, '0')} (доступно раз в 1.5 мин)`
-                          : busy
-                            ? 'Бой продолжается. Удерживайте лидерство…'
-                            : provider === 'mistral'
-                              ? 'Желание понимает ИИ'
-                              : provider === 'loading'
-                                ? 'Проверяем связь…'
-                                : 'Простые приказы · ИИ ещё не подключён'}
-                      </span>
-                      <span
-                        className={`typing-clock ${typingSeconds <= 3 ? 'urgent' : ''}`}
-                      >
                         {busy
-                          ? 'Приказ отправлен'
-                          : isOnCooldown
-                            ? `КД ${cooldownLeft} с`
-                            : typingDeadline
-                              ? `${typingSeconds.toFixed(1)} с`
-                              : '20 с на ввод · без вставки'}{' '}
-                        · {draft.length}/350
+                          ? 'Бой продолжается. Удерживайте лидерство…'
+                          : provider === 'mistral'
+                            ? 'Желание понимает ИИ'
+                            : provider === 'loading'
+                              ? 'Проверяем связь…'
+                              : 'Простые приказы · ИИ ещё не подключён'}
+                      </span>
+                      <span className="typing-clock">
+                        {busy ? 'Приказ отправлен' : `${draft.length}/350`}
                       </span>
                     </div>
                     <div className="wish-examples">
@@ -3717,13 +3709,51 @@ export default function Home() {
                       ))}
                     </div>
                   </form>
-                ) : (
-                  <p className="locked-description">
-                    {developing
-                      ? 'Добывайте и доставляйте ресурсы в штаб'
-                      : 'Право у лидера по заработку'}
-                  </p>
-                )}
+                  {game.decreeLog[0] && (
+                    <div className="last-decree">
+                      <Sparkles size={14} />
+                      <span>
+                        Последний указ:{' '}
+                        <b style={{ color: TEAMS[game.decreeLog[0].team].color }}>
+                          {playerName(game, game.decreeLog[0].team)}
+                        </b>{' '}
+                        · {game.decreeLog[0].text}
+                      </span>
+                    </div>
+                  )}
+                </section>
+              );
+            }
+
+            return (
+              <section className="wish-panel locked">
+                <div className="wish-heading">
+                  <span className="wish-medal">
+                    <LockKeyhole />
+                  </span>
+                  <div>
+                    <span className="eyebrow">ПРАВО ЛИДЕРА</span>
+                    <h2>
+                      {game.result
+                        ? 'Битва завершена'
+                        : developing
+                          ? `Приказы через ${Math.floor(developmentLeft / 60)}:${String(developmentLeft % 60).padStart(2, '0')}`
+                          : game.authority
+                            ? `Лидер: ${playerName(game, game.authority)}`
+                            : 'Обгони соперников по заработку'}
+                    </h2>
+                  </div>
+                  <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span className="wish-status">
+                      {Math.floor(money.earned)} ОЧКОВ ЭКОНОМИКИ
+                    </span>
+                  </div>
+                </div>
+                <p className="locked-description">
+                  {developing
+                    ? 'Добывайте и доставляйте ресурсы в штаб'
+                    : 'Право у лидера по заработку'}
+                </p>
                 {game.decreeLog[0] && (
                   <div className="last-decree">
                     <Sparkles size={14} />
