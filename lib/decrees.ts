@@ -858,9 +858,12 @@ export function describeAction(a: Action): string {
   }
 }
 
-export function describeDecree(d: Decree): string[] {
+export function describeDecree(d?: Decree | null): string[] {
+  if (!d || typeof d !== 'object' || !('kind' in d)) {
+    return [];
+  }
   if (d.kind === 'batch') {
-    return d.actions.map(describeAction);
+    return Array.isArray(d.actions) ? d.actions.map(describeAction) : [];
   }
   return [describeAction(d)];
 }

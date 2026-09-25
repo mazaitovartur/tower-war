@@ -94,6 +94,10 @@ export type Spell = {
   patch?: Decree;
   debuff?: Debuff | null;
   roll?: string;
+  counterTeam?: Team;
+  counterPrompt?: string;
+  counterPatch?: Decree;
+  counterOutcome?: 'leader' | 'counter';
 };
 export type MapEvent = {
   kind: 'deposit' | 'fortress' | 'caravan';
@@ -939,16 +943,44 @@ export function startSpell(
       epoch: g.authorityEpoch,
       prompt: prompt.slice(0, 350),
       startedAt: g.age,
+      castAt: g.age + 20,
       roll,
     },
   };
 }
+export function submitCounterSpell(
+  g: Game,
+  team: Team,
+  counterPrompt: string,
+): Game {
+  if (
+    !g.spell ||
+    g.spell.team === team ||
+    g.spell.counterPrompt ||
+    !counterPrompt.trim()
+  )
+    return g;
+  const cleanPrompt = counterPrompt.trim().slice(0, 350);
+  const casterName = playerName(g, team);
+  return {
+    ...g,
+    spell: {
+      ...g.spell,
+      counterTeam: team,
+      counterPrompt: cleanPrompt,
+    },
+    notice: `⚔️ ${casterName} выдвинул АНТИ-ПРИКАЗ: «${cleanPrompt.slice(0, 45)}»!`,
+  };
+}
+
 export function readySpell(
   g: Game,
   patch: Decree,
   epoch: number,
   debuff: Debuff | null,
   roll: string,
+  counterPatch?: Decree,
+  counterOutcome?: 'leader' | 'counter',
 ): Game {
   if (
     !g.spell ||
@@ -966,12 +998,13 @@ export function readySpell(
       patch,
       debuff,
       roll,
-      castAt:
-        Math.max(g.age, g.spell.startedAt + (roll === 'disabled' ? 0 : 3)) + 6,
+      counterPatch: counterPatch && validDecree(counterPatch) ? counterPatch : undefined,
+      counterOutcome,
+      castAt: Math.max(g.spell.castAt ?? 0, g.age + 20),
     },
     notice: debuff
       ? `${debuff.title}: ${debuff.description}`
-      : 'Приказ готовится · удержите лидерство 6 с',
+      : 'Приказ готовится · окно анти-приказа 20 с',
   };
 }
 export function sendScout(
@@ -1676,13 +1709,27 @@ export function tick(previous: Game, dt = 0.05): Game {
       g.age >= spell.castAt &&
       spell.patch
     ) {
+      const effectivePatch =
+        spell.counterOutcome === 'counter' && spell.counterPatch
+          ? spell.counterPatch
+          : spell.patch;
+      const effectiveTeam =
+        spell.counterOutcome === 'counter' && spell.counterTeam
+          ? spell.counterTeam
+          : spell.team;
+
       g = applyDecree(
         { ...g, spell: undefined },
-        spell.team,
-        spell.patch,
+        effectiveTeam,
+        effectivePatch,
         spell.epoch,
       );
-      if (spell.debuff) {
+      if (spell.counterOutcome === 'counter') {
+        g.notice = `⚔️ Анти-приказ победил в рулетке и изменил мир!`;
+      } else if (spell.counterPrompt) {
+        g.notice = `👑 Воля Лидера победила анти-приказ в рулетке!`;
+      }
+      if (spell.debuff && spell.counterOutcome !== 'counter') {
         g.curses = [
           ...(g.curses ?? []),
           { team: spell.team, debuff: spell.debuff, at: g.age },

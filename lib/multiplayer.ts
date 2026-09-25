@@ -30,7 +30,8 @@ export type NetworkMessage =
         | { kind: 'SCOUT'; from: number; x: number; y: number }
         | { kind: 'MESSAGE'; towerId: number; text: string }
         | { kind: 'SPELL_START'; prompt: string; roll: 'disabled' | 'rolling' }
-        | { kind: 'SPELL_READY'; patch: Decree; epoch: number; debuff: Debuff | null; roll: string };
+        | { kind: 'SPELL_READY'; patch: Decree; epoch: number; debuff: Debuff | null; roll: string; counterPatch?: Decree; counterOutcome?: 'leader' | 'counter' }
+        | { kind: 'COUNTER_SPELL_SUBMIT'; counterPrompt: string };
       team: Team;
     }
   | { type: 'GAME_SYNC'; game: Game };

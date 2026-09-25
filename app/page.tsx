@@ -45,6 +45,7 @@ import {
   ScrollText,
   Swords,
   Zap,
+  Skull,
 } from 'lucide-react';
 import { clampCamera, zoomCamera, type Camera } from '@/lib/camera';
 import {
@@ -86,6 +87,7 @@ import {
   sendMessage,
   startSpell,
   readySpell,
+  submitCounterSpell,
   sendScout,
   hasCannon,
   specialize,
@@ -170,8 +172,27 @@ export default function Home() {
   );
   const [promptMessage, setPromptMessage] = useState('');
   const [promptIsError, setPromptIsError] = useState(false);
+  const [counterDraft, setCounterDraft] = useState('');
+  const [counterSubmitted, setCounterSubmitted] = useState(false);
+  const [showChatModal, setShowChatModal] = useState(false);
+  const [chatDraft, setChatDraft] = useState('');
+
+  useEffect(() => {
+    if (!promptMessage) return;
+    const timer = setTimeout(() => {
+      setPromptMessage('');
+    }, 4000);
+    return () => clearTimeout(timer);
+  }, [promptMessage]);
   const pending = useRef<AbortController | null>(null);
   const [game, setGame] = useState(initialGame);
+
+  useEffect(() => {
+    if (!game.spell) {
+      setCounterDraft('');
+      setCounterSubmitted(false);
+    }
+  }, [game.spell]);
   const [nickname, setNickname] = useState('Командир');
   const [showNickModal, setShowNickModal] = useState(false);
   const [draftNick, setDraftNick] = useState('Командир');
@@ -205,6 +226,7 @@ export default function Home() {
   const [selected, setSelected] = useState<number | null>(0);
   const [selectAllMode, setSelectAllMode] = useState(false);
   const [paused, setPaused] = useState(false);
+  const [spectating, setSpectating] = useState(false);
   const [fraction, setFraction] = useState(0.5);
   const [speech, setSpeech] = useState(true);
   const [help, setHelp] = useState(false);
@@ -424,6 +446,7 @@ export default function Home() {
   const prevCaptures = useRef(game.captures || 0);
   const prevShots = useRef(game.shots?.length || 0);
   const prevResult = useRef<string | null>(null);
+  const prevEliminated = useRef(false);
   const prevDecreeCount = useRef(game.decreeLog?.length || 0);
   const prevNotice = useRef(game.notice);
   const prevSpellRoll = useRef<string | undefined>(undefined);
@@ -473,15 +496,40 @@ export default function Home() {
     }
     prevClashCount.current = game.clashes?.length || 0;
 
+    const playerEliminated =
+      started &&
+      !game.result &&
+      game.towers.filter((t) => t.team === myTeam).length === 0 &&
+      !game.troops.some((p) => p.team === myTeam) &&
+      game.elapsed > 4;
+
     if (game.result && !prevResult.current) {
-      if (game.result === 'you') {
+      if (game.result === myTeam) {
         playVictory();
       } else {
         playDefeat();
       }
     }
+    if (playerEliminated && !prevEliminated.current && !game.result) {
+      playDefeat();
+    }
+    prevEliminated.current = playerEliminated;
     prevResult.current = game.result || null;
-  }, [game.captures, game.shots, game.result, game.decreeLog, game.notice, game.spell?.roll, game.curses, game.clashes]);
+  }, [
+    game.captures,
+    game.shots,
+    game.result,
+    game.decreeLog,
+    game.notice,
+    game.spell?.roll,
+    game.curses,
+    game.clashes,
+    started,
+    myTeam,
+    game.towers,
+    game.troops,
+    game.elapsed,
+  ]);
   const blockPaste = (e: React.SyntheticEvent) => {
     e.preventDefault();
     setPromptMessage('Приказ нужно набрать вручную. Вставка отключена.');
@@ -614,6 +662,16 @@ export default function Home() {
   const auto = game.automation.find((a) => a.from === source?.id);
   const remaining = Math.max(0, Math.ceil(DURATION - game.elapsed));
   const yours = game.towers.filter((t) => t.team === myTeam);
+  const isWinner = !!game.result && game.result === myTeam;
+  const isDraw = game.result === 'draw';
+  const isEliminated =
+    started &&
+    !game.result &&
+    yours.length === 0 &&
+    !game.troops.some((p) => p.team === myTeam) &&
+    game.elapsed > 4;
+  const isDefeat = (!!game.result && !isWinner && !isDraw) || (isEliminated && !spectating);
+  const showGameOver = !!game.result || (isEliminated && !spectating);
   const chapter = recording
     ? recording.chapters.filter((c) => c.at <= game.age).at(-1)
     : undefined;
@@ -769,27 +827,7 @@ export default function Home() {
           </div>
         </div>
 
-        <hr className="settings-divider" />
 
-        <div className="settings-group">
-          <label className="settings-checkbox-label">
-            <input
-              type="checkbox"
-              checked={debuffsEnabled}
-              onChange={(e) => {
-                setDebuffsEnabled(e.target.checked);
-                try {
-                  localStorage.setItem(
-                    'tower-debuffs',
-                    e.target.checked ? 'on' : 'off',
-                  );
-                } catch {}
-              }}
-            />
-            <span>Рулетка штрафов · 50%</span>
-          </label>
-          <small className="settings-hint">50% шанс получить забавный побочный штраф при исполнении указа.</small>
-        </div>
 
         <hr className="settings-divider" />
 
@@ -867,6 +905,9 @@ export default function Home() {
     setPaused(false);
     setHelp(false);
     setStarted(false);
+    setSpectating(false);
+    prevResult.current = null;
+    prevEliminated.current = false;
   };
   const begin = () => {
     initAudio();
@@ -912,7 +953,9 @@ export default function Home() {
         case 'SPELL_START':
           return startSpell(g, actor, action.prompt, action.roll);
         case 'SPELL_READY':
-          return readySpell(g, action.patch, action.epoch, action.debuff, action.roll);
+          return readySpell(g, action.patch, action.epoch, action.debuff, action.roll, action.counterPatch, action.counterOutcome);
+        case 'COUNTER_SPELL_SUBMIT':
+          return submitCounterSpell(g, actor, action.counterPrompt);
         default:
           return g;
       }
@@ -945,7 +988,9 @@ export default function Home() {
         case 'SPELL_START':
           return startSpell(g, myTeam, action.prompt, action.roll);
         case 'SPELL_READY':
-          return readySpell(g, action.patch, action.epoch, action.debuff, action.roll);
+          return readySpell(g, action.patch, action.epoch, action.debuff, action.roll, action.counterPatch, action.counterOutcome);
+        case 'COUNTER_SPELL_SUBMIT':
+          return submitCounterSpell(g, myTeam, action.counterPrompt);
         default:
           return g;
       }
@@ -962,6 +1007,15 @@ export default function Home() {
     restoreBgm();
     playBgm();
     playBeep();
+    const myLobbyPlayer = sess.players.find((p) => p.team === sess.myTeam);
+    if (myLobbyPlayer?.name && myLobbyPlayer.name.trim()) {
+      const cleanNick = myLobbyPlayer.name.trim();
+      setNickname(cleanNick);
+      setDraftNick(cleanNick);
+      try {
+        localStorage.setItem('tower-player-name', cleanNick);
+      } catch {}
+    }
     setMpSession(sess);
     mpSessionRef.current = sess;
     setShowMpLobby(false);
@@ -1086,13 +1140,6 @@ export default function Home() {
       return;
     }
     if (recording || paused || help || current.result) return;
-    if (messageOpportunity(current, myTeam)) {
-      dispatchPlayerAction({ kind: 'MESSAGE', towerId: 0, text: draft });
-      setDraft('');
-      setTypingDeadline(0);
-      setPromptMessage('Сообщение над штабом · 10 секунд');
-      return;
-    }
     if (current.age < DEVELOPMENT_SECONDS) return;
     if (
       pending.current ||
@@ -1113,17 +1160,19 @@ export default function Home() {
     dispatchPlayerAction({
       kind: 'SPELL_START',
       prompt: submittedDraft,
-      roll: debuffsEnabled ? 'rolling' : 'disabled',
+      roll: 'disabled',
     });
     setPromptMessage('');
     setPromptIsError(false);
     try {
+      const myGameName = playerName(current, myTeam);
+      const hasCustomGameName = myGameName && myGameName !== 'Вы' && !myGameName.startsWith('Бот');
       const effectiveNickname =
+        (hasCustomGameName ? myGameName : null) ||
+        (nickname.trim() && nickname.trim() !== 'Командир' ? nickname.trim() : null) ||
+        (typeof window !== 'undefined' ? localStorage.getItem('tower-player-name')?.trim() : null) ||
+        (hasCustomGameName ? myGameName : null) ||
         nickname.trim() ||
-        (typeof window !== 'undefined'
-          ? localStorage.getItem('tower-player-name')?.trim() || ''
-          : '') ||
-        playerName(current, myTeam) ||
         'Командир';
 
       const response = await fetch('/api/decree', {
@@ -1131,7 +1180,7 @@ export default function Home() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           prompt: submittedDraft,
-          debuffsEnabled,
+          debuffsEnabled: false,
           nickname: effectiveNickname,
           apiKey: mistralApiKey || undefined,
         }),
@@ -1140,6 +1189,8 @@ export default function Home() {
       const data = (await response.json()) as {
         error?: string;
         patch?: unknown;
+        counterPatch?: unknown;
+        counterOutcome?: 'leader' | 'counter';
         debuff?: unknown;
         roll?: string;
         provider?: string;
@@ -1193,8 +1244,10 @@ export default function Home() {
         kind: 'SPELL_READY',
         patch,
         epoch,
-        debuff: validDebuff(data.debuff) ? data.debuff : null,
-        roll: data.roll ?? 'disabled',
+        debuff: null,
+        roll: 'disabled',
+        counterPatch: validDecree(data.counterPatch) ? data.counterPatch : undefined,
+        counterOutcome: data.counterOutcome === 'counter' ? 'counter' : 'leader',
       });
       if (
         gameRef.current.authority === myTeam &&
@@ -1232,6 +1285,96 @@ export default function Home() {
       }
     }
   }
+
+  const submitCounterPrompt = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const spell = gameRef.current.spell;
+    if (!spell || spell.team === myTeam || !counterDraft.trim() || counterSubmitted) return;
+    const cleanCounter = counterDraft.trim();
+    setCounterSubmitted(true);
+    dispatchPlayerAction({
+      kind: 'COUNTER_SPELL_SUBMIT',
+      counterPrompt: cleanCounter,
+    });
+    setPromptMessage('✓ Анти-приказ принят! Ожидание рулетки дуэли (50% / 50%)');
+    setPromptIsError(false);
+
+    const myCounterName = playerName(gameRef.current, myTeam);
+    const leaderName = playerName(gameRef.current, spell.team);
+    try {
+      const response = await fetch('/api/decree', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          prompt: spell.prompt,
+          counterPrompt: cleanCounter,
+          nickname: leaderName,
+          counterNickname: myCounterName,
+          debuffsEnabled: false,
+          apiKey: mistralApiKey || undefined,
+        }),
+      });
+      if (response.ok) {
+        const data = (await response.json()) as {
+          patch?: unknown;
+          counterPatch?: unknown;
+          counterOutcome?: 'leader' | 'counter';
+        };
+        const activeLeaderPatch = spell.patch ?? (validDecree(data.patch) ? data.patch : undefined);
+        if (data.counterPatch && validDecree(data.counterPatch) && activeLeaderPatch) {
+          dispatchPlayerAction({
+            kind: 'SPELL_READY',
+            patch: activeLeaderPatch,
+            epoch: spell.epoch,
+            debuff: spell.debuff ?? null,
+            roll: spell.roll ?? 'disabled',
+            counterPatch: data.counterPatch,
+            counterOutcome: (data.counterOutcome === 'counter' || Math.random() < 0.5) ? 'counter' : 'leader',
+          });
+        }
+      }
+    } catch {}
+  };
+
+  const submitChatMessage = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!chatDraft.trim()) return;
+    const home = game.towers.find((t) => t.team === myTeam && t.home) ?? game.towers[0];
+    dispatchPlayerAction({ kind: 'MESSAGE', towerId: home ? home.id : 0, text: chatDraft.trim() });
+    setChatDraft('');
+    setShowChatModal(false);
+    setPromptMessage('✓ Реплика отправлена над штабом');
+    setPromptIsError(false);
+  };
+
+  const handleFastForwardToDecrees = () => {
+    setGame((g) => {
+      const newAge = Math.max(g.age, DEVELOPMENT_SECONDS + 1);
+      const currentMaxEarned = TEAM_IDS.reduce(
+        (max, t) => Math.max(max, g.wallets[t]?.earned ?? 0),
+        0,
+      );
+      return {
+        ...g,
+        age: newAge,
+        authority: myTeam,
+        authorityEpoch: (g.authorityEpoch ?? 0) + 1,
+        authorityTimer: 20,
+        allowHeadquartersCapture: true,
+        wallets: {
+          ...g.wallets,
+          [myTeam]: {
+            ...g.wallets[myTeam],
+            earned: Math.max(g.wallets[myTeam]?.earned ?? 0, currentMaxEarned + 100),
+          },
+        },
+        notice: '⚡ Время перемотано: доступен ввод боевых приказов!',
+      };
+    });
+    setTypingSeconds(20);
+    setDraft('');
+  };
+
   if (!started)
     return (
       <main
@@ -1255,6 +1398,7 @@ export default function Home() {
           <DevConsole
             isOpen={devOpen}
             onClose={() => setDevOpen(false)}
+            onFastForwardToDecrees={handleFastForwardToDecrees}
             onExecuteDecree={(patch) => {
               let reports: string[] = [];
               setGame((g) => {
@@ -1486,6 +1630,7 @@ export default function Home() {
           <DevConsole
             isOpen={devOpen}
             onClose={() => setDevOpen(false)}
+            onFastForwardToDecrees={handleFastForwardToDecrees}
             onExecuteDecree={(patch) => {
               let reports: string[] = [];
               setGame((g) => {
@@ -2255,12 +2400,31 @@ export default function Home() {
             {speech ? <Volume2 size={18} /> : <VolumeX size={18} />} Реплики
           </button>
           <TroopLayer game={game} camera={camera} viewport={viewport} speech={speech} paused={paused || help} fogEnabled={fogEnabled && !isFogCleared} myTeam={myTeam} />
-          {!recording && (paused || help || game.result) && (
+          {spectating && isEliminated && !game.result && (
+            <div className="spectator-floating-banner">
+              <Eye size={14} />
+              <span>Вы выбыли · Наблюдение</span>
+              <button type="button" onClick={() => setSpectating(false)}>
+                Итог
+              </button>
+            </div>
+          )}
+          {!recording && (paused || help || showGameOver) && (
             <div className="game-overlay">
-              <section className={`overlay-card ${game.result ? 'victory-card' : ''}`}>
+              <section
+                className={`overlay-card ${
+                  isWinner
+                    ? 'victory-card'
+                    : isDefeat
+                      ? 'defeat-card'
+                      : isDraw
+                        ? 'draw-card'
+                        : ''
+                }`}
+              >
                 {help ? (
                   <GameHelp onClose={() => setHelp(false)} />
-                ) : game.result ? (
+                ) : isWinner ? (
                   <div className="victory-modal-content">
                     <div className="victory-trophy-podium">
                       <img
@@ -2270,11 +2434,77 @@ export default function Home() {
                       />
                     </div>
                     <h1 className="victory-title">
-                      {game.result === 'you'
-                        ? 'Долина ваша!'
-                        : game.result === 'draw'
-                          ? 'Боевая ничья'
-                          : `Победа: ${playerName(game, game.result)}`}
+                      Долина ваша!
+                    </h1>
+                    <div className="victory-stats-row">
+                      <div className="victory-stat-chip">
+                        <Flag size={15} />
+                        <span>Контроль: <b>{yours.length} / {game.towers.length}</b></span>
+                      </div>
+                      <div className="victory-stat-chip gold">
+                        <Coins size={15} />
+                        <span>Слава: <b>{Math.floor(money.earned)}</b></span>
+                      </div>
+                    </div>
+                    <button className="primary victory-replay-btn" onClick={begin}>
+                      <span>Ещё один бой</span> <RotateCcw size={18} />
+                    </button>
+                  </div>
+                ) : isDefeat ? (
+                  <div className="defeat-modal-content">
+                    <div className="defeat-emblem-podium">
+                      <Skull size={58} className="defeat-skull-art" />
+                    </div>
+                    <h1 className="defeat-title">
+                      Поражение
+                    </h1>
+                    {game.result && game.result !== 'draw' ? (
+                      <div className="defeat-winner-badge">
+                        <Crown size={15} className="defeat-crown-icon" />
+                        <span>
+                          Победитель:{' '}
+                          <b style={{ color: TEAMS[game.result as Team]?.color || '#fca5a5' }}>
+                            {playerName(game, game.result)}
+                          </b>
+                        </span>
+                      </div>
+                    ) : (
+                      <div className="defeat-winner-badge">
+                        <span>Ваша цитадель пала · Битва продолжается</span>
+                      </div>
+                    )}
+                    <div className="defeat-stats-row">
+                      <div className="defeat-stat-chip">
+                        <Flag size={15} />
+                        <span>Контроль: <b>{yours.length} / {game.towers.length}</b></span>
+                      </div>
+                      <div className="defeat-stat-chip gold">
+                        <Coins size={15} />
+                        <span>Слава: <b>{Math.floor(money.earned)}</b></span>
+                      </div>
+                    </div>
+                    <div className="defeat-btn-col">
+                      <button className="primary defeat-replay-btn" onClick={begin}>
+                        <span>В бой снова</span> <RotateCcw size={18} />
+                      </button>
+                      {isEliminated && !game.result && (
+                        <button
+                          type="button"
+                          className="defeat-spectate-btn"
+                          onClick={() => setSpectating(true)}
+                        >
+                          <Eye size={16} /> Наблюдать за боем
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ) : isDraw ? (
+                  <div className="draw-modal-content">
+                    <div className="draw-emblem-podium">
+                      <Swords size={56} className="draw-swords-art" />
+                    </div>
+                    <h1 className="draw-title">
+                      Боевая ничья
                     </h1>
                     <div className="victory-stats-row">
                       <div className="victory-stat-chip">
@@ -2322,7 +2552,7 @@ export default function Home() {
                       ВСЯ АРМИЯ ВЫБРАНА
                     </span>
                     <span className="selected-number">
-                      {game.towers.filter((t) => t.team === 'you').length} фортов
+                      {game.towers.filter((t) => t.team === myTeam).length} фортов
                     </span>
                   </div>
                 </div>
@@ -2844,6 +3074,60 @@ export default function Home() {
           · {Math.ceil(game.event.until - game.age)} с ↗
         </button>
       )}
+      {game.spell && (() => {
+        const authorTeam = game.spell!.team;
+        const rawText = (game.spell!.patch ? describeDecree(game.spell!.patch)[0] : '') || game.spell!.prompt;
+        const isSpecial = rawText.startsWith('⚡');
+        const timeLeft = game.spell!.castAt ? Math.max(0, Math.ceil(game.spell!.castAt - game.age)) : null;
+        return (
+          <div
+            key={`spell-${game.spell!.startedAt}`}
+            className={`decree-notice-pill ${isSpecial ? 'special-era' : ''}`}
+          >
+            <span
+              className="decree-pill-author"
+              style={{ color: TEAMS[authorTeam].color }}
+            >
+              👑 {playerName(game, authorTeam)}
+            </span>
+            <span className="decree-pill-sep">·</span>
+            <span className="decree-pill-text">{rawText}</span>
+            {timeLeft !== null && timeLeft > 0 && (
+              <>
+                <span className="decree-pill-sep">·</span>
+                <span className="decree-pill-time">{timeLeft} с</span>
+              </>
+            )}
+          </div>
+        );
+      })()}
+      {!game.spell && game.announcement && game.announcement.until > game.age && (() => {
+        const authorTeam = game.announcement!.team;
+        const rawText = game.announcement!.text;
+        const isSpecial = rawText.startsWith('⚡');
+        const timeLeft = Math.max(0, Math.ceil(game.announcement!.until - game.age));
+        return (
+          <div
+            key={`ann-${game.announcement!.team}-${game.announcement!.until}`}
+            className={`decree-notice-pill ${isSpecial ? 'special-era' : ''}`}
+          >
+            <span
+              className="decree-pill-author"
+              style={{ color: TEAMS[authorTeam].color }}
+            >
+              👑 {playerName(game, authorTeam)}
+            </span>
+            <span className="decree-pill-sep">·</span>
+            <span className="decree-pill-text">{rawText}</span>
+            {timeLeft > 0 && (
+              <>
+                <span className="decree-pill-sep">·</span>
+                <span className="decree-pill-time">{timeLeft} с</span>
+              </>
+            )}
+          </div>
+        );
+      })()}
       {game.spell && (
         <output
           className="spell-toast roulette-card-enhanced"
@@ -2857,9 +3141,9 @@ export default function Home() {
         >
           <div className="roulette-disc-wrap">
             <div
-              className={`roulette-disc ${game.spell.patch || game.spell.roll === 'disabled' ? 'settled' : ''} ${game.spell.debuff ? 'debuff' : game.spell.patch ? 'pure' : ''}`}
+              className={`roulette-disc ${game.spell.patch || game.spell.counterOutcome ? 'settled' : ''} ${game.spell.counterOutcome === 'counter' ? 'counter-win' : 'pure'}`}
             >
-              {game.spell.roll === 'debuff' ? '☠' : game.spell.patch ? '✦' : '🎲'}
+              {game.spell.counterPrompt ? '⚔️' : game.spell.patch ? '👑' : '📜'}
             </div>
           </div>
           <div
@@ -2874,7 +3158,11 @@ export default function Home() {
           >
             <div className="roulette-top-badge">
               <Sparkles size={13} className="roulette-sparkle" />
-              <span>РУЛЕТКА ПРИКАЗОВ ЛИДЕРА</span>
+              <span>
+                {game.spell.counterPrompt
+                  ? '⚔️ ДУЭЛЬ ПРИКАЗОВ: РУЛЕТКА 50% / 50%'
+                  : 'БОЕВОЙ ПРИКАЗ ЛИДЕРА'}
+              </span>
             </div>
             <div
               className="roulette-status-line"
@@ -2892,67 +3180,35 @@ export default function Home() {
                 {playerName(game, game.spell.team)}
               </span>
               <span
-                className={`roulette-outcome-badge ${game.spell.debuff ? 'penalty' : 'pure'}`}
+                className={`roulette-outcome-badge ${
+                  game.spell.counterOutcome === 'counter'
+                    ? 'counter-win'
+                    : 'pure'
+                }`}
                 style={{
                   whiteSpace: 'normal',
                   wordBreak: 'break-word',
                   maxWidth: '100%',
                 }}
               >
-                {game.spell.patch
-                  ? game.spell.debuff
-                    ? `⚠️ Штраф: ${game.spell.debuff.title}`
-                    : '✓ Без штрафа (чистый приказ)'
-                  : game.spell.roll === 'disabled'
-                    ? 'Подготовка приказа'
-                    : 'Вращение рулетки…'}
+                {game.spell.counterPrompt
+                  ? game.spell.counterOutcome
+                    ? game.spell.counterOutcome === 'counter'
+                      ? '⚔️ Анти-приказ победил (50%)!'
+                      : '👑 Воля Лидера победила дуэль (50%)!'
+                    : '⚔️ Дуэль приказов: рулетка 50% / 50%…'
+                  : game.spell.patch
+                    ? '✓ Приказ утверждён'
+                    : 'Подготовка приказа…'}
               </span>
             </div>
-            <div
-              className="roulette-prompt-hero"
-              style={{
-                width: '100%',
-                maxWidth: '100%',
-                boxSizing: 'border-box',
-                overflow: 'hidden',
-              }}
-            >
-              <div
-                className="roulette-hero-badges"
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  flexWrap: 'wrap',
-                  gap: '6px',
-                  maxWidth: '100%',
-                }}
-              >
-                <span
-                  className="roulette-hero-author"
-                  style={{
-                    borderColor: TEAMS[game.spell.team].color,
-                    color: TEAMS[game.spell.team].color,
-                  }}
-                >
-                  👑 {playerName(game, game.spell.team)}
-                </span>
-                <span className="roulette-hero-type">
-                  {game.spell.prompt.startsWith('⚡') ? 'СОБЫТИЕ ЭРЫ' : 'УКАЗ ВЛАСТЕЛИНА'}
+            {game.spell.counterPrompt && (
+              <div className="roulette-counter-duel-row">
+                <span className="roulette-counter-pill">
+                  ⚔️ Анти-приказ ({playerName(game, game.spell.counterTeam ?? 'red')}): «{game.spell.counterPrompt}»
                 </span>
               </div>
-              <div
-                className="roulette-hero-text"
-                style={{
-                  wordBreak: 'break-word',
-                  overflowWrap: 'anywhere',
-                  maxWidth: '100%',
-                }}
-              >
-                {game.spell.patch
-                  ? describeDecree(game.spell.patch)[0] || game.spell.prompt
-                  : game.spell.prompt}
-              </div>
-            </div>
+            )}
             <div className="roulette-countdown-bar">
               <small>
                 {game.spell.patch
@@ -2960,18 +3216,6 @@ export default function Home() {
                   : 'Бой продолжается…'}
               </small>
             </div>
-            {game.spell.debuff && (
-              <p
-                className="roulette-debuff-desc"
-                style={{
-                  wordBreak: 'break-word',
-                  overflowWrap: 'anywhere',
-                  maxWidth: '100%',
-                }}
-              >
-                ⚠️ {game.spell.debuff.description}
-              </p>
-            )}
           </div>
         </output>
       )}
@@ -3048,30 +3292,6 @@ export default function Home() {
             )}
           </div>
         </aside>
-      )}
-      {!game.spell && game.announcement && game.announcement.until > game.age && (
-        <output
-          key={`${game.announcement.team}-${game.announcement.until}`}
-          className="center-prompt"
-        >
-          <div className="center-prompt-badge-row">
-            <span
-              className="center-prompt-author-tag"
-              style={{
-                borderColor: TEAMS[game.announcement.team].color,
-                color: TEAMS[game.announcement.team].color,
-              }}
-            >
-              👑 {playerName(game, game.announcement.team)}
-            </span>
-            <span className="center-prompt-type-tag">
-              {game.announcement.text.startsWith('⚡') ? 'СОБЫТИЕ ЭРЫ' : 'УКАЗ ВЛАСТЕЛИНА'}
-            </span>
-          </div>
-          <div className="center-prompt-text-content">
-            {game.announcement.text}
-          </div>
-        </output>
       )}
       {recording && (
         <>
@@ -3171,139 +3391,10 @@ export default function Home() {
         </>
       )}
       {!recording && (
-        <section
-          className={`wish-panel ${game.authority === 'you' || messageMode ? 'granted' : 'locked'}`}
-        >
-          <div className="wish-heading">
-            <span className="wish-medal">
-              {game.authority === 'you' || messageMode ? <Sparkles /> : <LockKeyhole />}
-            </span>
-            <div>
-              <span className="eyebrow">ПРАВО ЛИДЕРА</span>
-              <h2>
-                {game.result
-                  ? 'Битва завершена'
-                  : messageMode
-                    ? 'Ваш приказ · 10 секунд'
-                    : developing
-                      ? `Приказы через ${Math.floor(developmentLeft / 60)}:${String(developmentLeft % 60).padStart(2, '0')}`
-                      : game.authority === 'you'
-                        ? 'Ваш приказ · 10 секунд'
-                        : game.authority
-                          ? `Лидер: ${playerName(game, game.authority)}`
-                          : 'Обгони соперников по заработку'}
-              </h2>
-            </div>
-            <span className="wish-status">
-              {game.authority === 'you' || messageMode
-                ? '👑 ВАША ВЛАСТЬ'
-                : `${Math.floor(money.earned)} ОЧКОВ ЭКОНОМИКИ`}
-            </span>
-          </div>
-          {(messageMode || (!developing && game.authority === 'you')) &&
-          !game.result ? (
-            <form onSubmit={submitPrompt}>
-              <label htmlFor="wish">
-                Меняй армии и правила. Нельзя только объявить «я победил».
-              </label>
-              <div className="wish-input">
-                <textarea
-                  id="wish"
-                  value={draft}
-                  disabled={paused || help || busy || !!game.spell}
-                  onPaste={blockPaste}
-                  onDrop={blockPaste}
-                  onDragOver={(e) => e.preventDefault()}
-                  onBeforeInput={(e) => {
-                    if (
-                      [
-                        'insertFromPaste',
-                        'insertFromDrop',
-                        'insertFromYank',
-                      ].includes((e.nativeEvent as InputEvent).inputType)
-                    )
-                      blockPaste(e);
-                  }}
-                  onKeyDown={(e) => {
-                    if (
-                      ((e.ctrlKey || e.metaKey) &&
-                        e.key.toLowerCase() === 'v') ||
-                      (e.shiftKey && e.key === 'Insert')
-                    ) {
-                      blockPaste(e);
-                    }
-                    if (e.key === 'Enter' && !e.shiftKey) {
-                      e.preventDefault();
-                      if (!paused && !help && !busy && !game.spell && draft.trim()) {
-                        submitPrompt(e as unknown as React.FormEvent);
-                      }
-                    }
-                  }}
-                  onChange={(e) => {
-                    if (!typingDeadline) {
-                      setTypingDeadline(Date.now() + 20000);
-                      setTypingSeconds(20);
-                    }
-                    if (promptIsError) setPromptIsError(false);
-                    if (promptMessage) setPromptMessage('');
-                    setDraft(e.target.value);
-                  }}
-                  maxLength={350}
-                  rows={2}
-                  placeholder="Введите приказ…"
-                />
-                <button
-                  type="submit"
-                  disabled={
-                    paused || help || busy || !!game.spell || !draft.trim()
-                  }
-                >
-                  <Send size={20} />
-                  {busy ? 'Колдуем…' : 'ИСПОЛНИТЬ'}
-                </button>
-              </div>
-              <div className="wish-meta">
-                <span>
-                  {busy
-                    ? 'Бой продолжается. Удерживайте лидерство…'
-                    : provider === 'mistral'
-                      ? 'Желание понимает ИИ'
-                      : provider === 'loading'
-                        ? 'Проверяем связь…'
-                        : 'Простые приказы · ИИ ещё не подключён'}
-                </span>
-                <span
-                  className={`typing-clock ${typingSeconds <= 3 ? 'urgent' : ''}`}
-                >
-                  {busy
-                    ? 'Приказ отправлен'
-                    : typingDeadline
-                      ? `${typingSeconds.toFixed(1)} с`
-                      : '10 с на ввод · без вставки'}{' '}
-                  · {draft.length}/350
-                </span>
-              </div>
-              <div className="wish-examples">
-                <span>Попробуй:</span>
-                {[
-                  'Все красные теперь мои',
-                  'Уничтожь красных',
-                  'Заморозь врагов на 30 секунд',
-                ].map((text) => (
-                  <span key={text}>{text}</span>
-                ))}
-              </div>
-            </form>
-          ) : (
-            <p className="locked-description">
-              {developing
-                ? 'Добывайте и доставляйте ресурсы в штаб'
-                : 'Право у лидера по заработку'}
-            </p>
-          )}
+        <>
           {promptMessage && (
             <div
-              className={`prompt-feedback-card ${promptIsError ? 'error' : 'success'}`}
+              className={`prompt-feedback-toast ${promptIsError ? 'error' : 'success'}`}
               role="alert"
             >
               <div className="feedback-card-header">
@@ -3318,59 +3409,246 @@ export default function Home() {
                   <X size={13} />
                 </button>
               </div>
-              <p className="feedback-card-body">{promptMessage}</p>
-              {promptIsError && (
-                <div className="feedback-quick-hints">
-                  <small>💡 Рабочие примеры (нажмите для вставки):</small>
-                  <div className="feedback-chip-row">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setDraft('Все красные теперь мои');
-                        setPromptMessage('');
-                        setPromptIsError(false);
-                      }}
-                    >
-                      «Все красные мои»
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setDraft('+50 бойцов в штаб');
-                        setPromptMessage('');
-                        setPromptIsError(false);
-                      }}
-                    >
-                      «+50 бойцов в штаб»
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setDraft('Заморозь врагов на 20 секунд');
-                        setPromptMessage('');
-                        setPromptIsError(false);
-                      }}
-                    >
-                      «Заморозь врагов»
-                    </button>
+              <p className="feedback-card-body" style={{ margin: 0 }}>{promptMessage}</p>
+            </div>
+          )}
+          {(() => {
+            const isAntiMode = !!(game.spell && game.spell.team !== myTeam && !game.result);
+            const isLeaderTurn = !developing && game.authority === 'you' && !game.result;
+            const antiSecondsLeft = isAntiMode
+              ? Math.max(0, Math.ceil((game.spell!.castAt ?? (game.spell!.startedAt + 20)) - game.age))
+              : 0;
+
+            return (
+              <section
+                className={`wish-panel ${isAntiMode ? 'anti-mode granted' : isLeaderTurn ? 'granted' : 'locked'}`}
+              >
+                <div className="wish-heading">
+                  <span className="wish-medal">
+                    {isAntiMode ? (
+                      <span style={{ fontSize: 16 }}>⚔️</span>
+                    ) : isLeaderTurn ? (
+                      <Sparkles />
+                    ) : (
+                      <LockKeyhole />
+                    )}
+                  </span>
+                  <div>
+                    <span className="eyebrow">
+                      {isAntiMode
+                        ? 'АНТИ-ПРИКАЗ · ДУЭЛЬ 50/50'
+                        : 'ПРАВО ЛИДЕРА'}
+                    </span>
+                    <h2>
+                      {isAntiMode
+                        ? 'Ваш анти-приказ'
+                        : game.result
+                          ? 'Битва завершена'
+                          : developing
+                            ? `Приказы через ${Math.floor(developmentLeft / 60)}:${String(developmentLeft % 60).padStart(2, '0')}`
+                            : game.authority === 'you'
+                              ? 'Ваш приказ'
+                              : game.authority
+                                ? `Лидер: ${playerName(game, game.authority)}`
+                                : 'Обгони соперников по заработку'}
+                    </h2>
+                  </div>
+                  <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span className={`wish-status ${isAntiMode ? 'anti' : ''}`}>
+                      {isAntiMode
+                        ? `⏳ ${antiSecondsLeft} с`
+                        : isLeaderTurn
+                          ? '👑 ВАША ВЛАСТЬ'
+                          : `${Math.floor(money.earned)} ОЧКОВ ЭКОНОМИКИ`}
+                    </span>
                   </div>
                 </div>
-              )}
+
+                {isAntiMode ? (
+                  !counterSubmitted ? (
+                    <form onSubmit={submitCounterPrompt}>
+                      <div className="wish-input">
+                        <textarea
+                          id="counter-wish"
+                          value={counterDraft}
+                          onChange={(e) => setCounterDraft(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' && !e.shiftKey) {
+                              e.preventDefault();
+                              if (counterDraft.trim()) {
+                                submitCounterPrompt(e);
+                              }
+                            }
+                          }}
+                          maxLength={350}
+                          rows={2}
+                          placeholder="Введите анти-приказ…"
+                          autoFocus
+                        />
+                        <button
+                          type="submit"
+                          disabled={!counterDraft.trim()}
+                          className="counter-submit-btn"
+                        >
+                          ⚔️ Парировать
+                        </button>
+                      </div>
+                      <div className="wish-meta">
+                        <span>Дуэль приказов · Рулетка определит победителя 50/50</span>
+                        <span className={`typing-clock ${antiSecondsLeft <= 3 ? 'urgent' : ''}`}>
+                          {antiSecondsLeft} с на ввод · {counterDraft.length}/350
+                        </span>
+                      </div>
+                    </form>
+                  ) : (
+                    <div className="counter-submitted-badge">
+                      ✓ Ваш анти-приказ «{counterDraft}» принят! Рулетка решит исход дуэли (50% / 50%)…
+                    </div>
+                  )
+                ) : isLeaderTurn ? (
+                  <form onSubmit={submitPrompt}>
+                    <label htmlFor="wish">
+                      Меняй армии и правила. Нельзя только объявить «я победил».
+                    </label>
+                    <div className="wish-input">
+                      <textarea
+                        id="wish"
+                        value={draft}
+                        disabled={paused || help || busy || !!game.spell}
+                        onPaste={blockPaste}
+                        onDrop={blockPaste}
+                        onDragOver={(e) => e.preventDefault()}
+                        onBeforeInput={(e) => {
+                          if (
+                            [
+                              'insertFromPaste',
+                              'insertFromDrop',
+                              'insertFromYank',
+                            ].includes((e.nativeEvent as InputEvent).inputType)
+                          )
+                            blockPaste(e);
+                        }}
+                        onKeyDown={(e) => {
+                          if (
+                            ((e.ctrlKey || e.metaKey) &&
+                              e.key.toLowerCase() === 'v') ||
+                            (e.shiftKey && e.key === 'Insert')
+                          ) {
+                            blockPaste(e);
+                          }
+                          if (e.key === 'Enter' && !e.shiftKey) {
+                            e.preventDefault();
+                            if (!paused && !help && !busy && !game.spell && draft.trim()) {
+                              submitPrompt(e as unknown as React.FormEvent);
+                            }
+                          }
+                        }}
+                        onChange={(e) => {
+                          if (!typingDeadline) {
+                            setTypingDeadline(Date.now() + 20000);
+                            setTypingSeconds(20);
+                          }
+                          if (promptIsError) setPromptIsError(false);
+                          if (promptMessage) setPromptMessage('');
+                          setDraft(e.target.value);
+                        }}
+                        maxLength={350}
+                        rows={2}
+                        placeholder="Введите приказ…"
+                      />
+                      <button
+                        type="submit"
+                        disabled={
+                          paused || help || busy || !!game.spell || !draft.trim()
+                        }
+                      >
+                        <Send size={20} />
+                        {busy ? 'Колдуем…' : 'ИСПОЛНИТЬ'}
+                      </button>
+                    </div>
+                    <div className="wish-meta">
+                      <span>
+                        {busy
+                          ? 'Бой продолжается. Удерживайте лидерство…'
+                          : provider === 'mistral'
+                            ? 'Желание понимает ИИ'
+                            : provider === 'loading'
+                              ? 'Проверяем связь…'
+                              : 'Простые приказы · ИИ ещё не подключён'}
+                      </span>
+                      <span
+                        className={`typing-clock ${typingSeconds <= 3 ? 'urgent' : ''}`}
+                      >
+                        {busy
+                          ? 'Приказ отправлен'
+                          : typingDeadline
+                            ? `${typingSeconds.toFixed(1)} с`
+                            : '20 с на ввод · без вставки'}{' '}
+                        · {draft.length}/350
+                      </span>
+                    </div>
+                    <div className="wish-examples">
+                      <span>Попробуй:</span>
+                      {[
+                        'Все красные теперь мои',
+                        'Уничтожь красных',
+                        'Заморозь врагов на 30 секунд',
+                      ].map((text) => (
+                        <span key={text}>{text}</span>
+                      ))}
+                    </div>
+                  </form>
+                ) : (
+                  <p className="locked-description">
+                    {developing
+                      ? 'Добывайте и доставляйте ресурсы в штаб'
+                      : 'Право у лидера по заработку'}
+                  </p>
+                )}
+                {game.decreeLog[0] && (
+                  <div className="last-decree">
+                    <Sparkles size={14} />
+                    <span>
+                      Последний указ:{' '}
+                      <b style={{ color: TEAMS[game.decreeLog[0].team].color }}>
+                        {playerName(game, game.decreeLog[0].team)}
+                      </b>{' '}
+                      · {game.decreeLog[0].text}
+                    </span>
+                  </div>
+                )}
+              </section>
+            );
+          })()}
+        </>
+      )}
+      {showChatModal && (
+        <div className="hq-chat-modal-backdrop" onClick={() => setShowChatModal(false)}>
+          <div className="hq-chat-bubble-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="hq-chat-header">
+              <span className="hq-chat-icon">💬</span>
+              <b>Реплика над штабом (видят все)</b>
+              <button type="button" className="feedback-dismiss-btn" onClick={() => setShowChatModal(false)}>
+                <X size={15} />
+              </button>
             </div>
-          )}
-          {game.decreeLog[0] && (
-            <div className="last-decree">
-              <Sparkles size={14} />
-              <span>
-                Последний указ:{' '}
-                <b style={{ color: TEAMS[game.decreeLog[0].team].color }}>
-                  {playerName(game, game.decreeLog[0].team)}
-                </b>{' '}
-                · {game.decreeLog[0].text}
-              </span>
-            </div>
-          )}
-        </section>
+            <p className="hq-chat-desc">Сообщение появится в облачке речи над вашей цитаделью на 10 секунд.</p>
+            <form onSubmit={submitChatMessage}>
+              <input
+                type="text"
+                value={chatDraft}
+                onChange={(e) => setChatDraft(e.target.value)}
+                placeholder="Напишите реплику или фразу…"
+                maxLength={100}
+                autoFocus
+              />
+              <div className="hq-chat-btn-row">
+                <button type="button" onClick={() => setShowChatModal(false)}>Отмена</button>
+                <button type="submit" disabled={!chatDraft.trim()}>Сказать</button>
+              </div>
+            </form>
+          </div>
+        </div>
       )}
       <footer className="tips">
         <span>
@@ -3392,7 +3670,7 @@ export default function Home() {
         </span>
         <ChevronRight size={14} />
         <span>
-          <span className={game.result === 'you' ? 'step complete' : 'step'}>
+          <span className={game.result === myTeam ? 'step complete' : 'step'}>
             3
           </span>{' '}
           Подчините долину

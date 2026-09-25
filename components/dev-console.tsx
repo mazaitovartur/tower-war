@@ -9,9 +9,11 @@ export interface DevConsoleProps {
   isOpen: boolean;
   onClose: () => void;
   onExecuteDecree: (patch: Decree) => string[] | void;
+  onFastForwardToDecrees?: () => void;
 }
 
 const PRESETS = [
+  { label: '⏩ Промотать до приказов (120с)', prompt: 'промотать время' },
   { label: '+500 Золота и Дерева', prompt: 'Дай мне 500 золота и 500 дерева' },
   { label: 'Все башни мои', prompt: 'Сделай все башни на карте моими' },
   { label: 'Заморозить врагов', prompt: 'Заморозь всех врагов на 25 секунд' },
@@ -20,13 +22,13 @@ const PRESETS = [
   { label: 'Скорость войск x2', prompt: 'Увеличь скорость моих войск в 2 раза' },
 ];
 
-export function DevConsole({ isOpen, onClose, onExecuteDecree }: DevConsoleProps) {
+export function DevConsole({ isOpen, onClose, onExecuteDecree, onFastForwardToDecrees }: DevConsoleProps) {
   const [prompt, setPrompt] = useState('');
   const [loading, setLoading] = useState(false);
   const [logs, setLogs] = useState<Array<{ type: 'in' | 'out' | 'err' | 'action' | 'report'; text: string; time: string }>>([
     {
       type: 'out',
-      text: 'Дев-консоль активирована. Вводите любые приказы напрямую без ограничений по таймингу и лидерству.',
+      text: 'Дев-консоль активирована. Вводите любые приказы ИИ или команду "промотать" ("skip"), чтобы сразу открыть ввод приказов в игре.',
       time: new Date().toLocaleTimeString(),
     },
   ]);
@@ -62,6 +64,35 @@ export function DevConsole({ isOpen, onClose, onExecuteDecree }: DevConsoleProps
     setHistory((prev) => [text, ...prev.filter((item) => item !== text)]);
     setHistoryIndex(-1);
     setPrompt('');
+
+    const cleanLower = text.toLowerCase();
+    const isFastForward =
+      cleanLower === 'skip' ||
+      cleanLower === '/skip' ||
+      cleanLower === 'time' ||
+      cleanLower === '/time' ||
+      cleanLower === 'ff' ||
+      cleanLower === '120' ||
+      cleanLower === 'приказ' ||
+      cleanLower === 'приказы' ||
+      cleanLower.includes('промот') ||
+      cleanLower.includes('перемот') ||
+      (cleanLower.includes('разблок') && cleanLower.includes('приказ')) ||
+      cleanLower === 'fastforward';
+
+    if (isFastForward) {
+      if (onFastForwardToDecrees) {
+        onFastForwardToDecrees();
+        addLog('report', '⏩ [УСПЕХ]: Время промотано до 120+ секунд! Ввод боевых приказов в игре разблокирован, право лидера у вас.');
+        playCapture();
+      } else {
+        addLog('err', '❌ Перемотка времени недоступна в текущем режиме.');
+        playError();
+      }
+      setTimeout(() => inputRef.current?.focus(), 60);
+      return;
+    }
+
     setLoading(true);
 
     try {
