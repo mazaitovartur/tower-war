@@ -103,6 +103,11 @@ import {
 
 export type MapTheme = 'dark-green' | 'autumn' | 'night' | 'snow' | 'bonus-night' | 'bonus-snow';
 
+function cleanPromptText(text?: string | null): string {
+  if (!text) return '';
+  return text.replace(/^[«"'\s]+|[»"'\s]+$/g, '').trim();
+}
+
 export const THEME_OPTIONS: { id: MapTheme; label: string; bg: string }[] = [
   { id: 'night',       label: 'Лунная ночь (тактика)',            bg: '/assets/night.jpeg' },
   { id: 'dark-green',  label: 'Тёмный лес (изумрудный)',         bg: '/assets/dark-green.jpeg' },
@@ -3093,9 +3098,9 @@ export default function Home() {
       )}
       {game.spell && (() => {
         const authorTeam = game.spell!.team;
-        const promptText = game.spell!.prompt?.trim();
-        const actionDesc = game.spell!.patch ? describeDecree(game.spell!.patch)[0]?.replace(/\s*\[цель:.*?\]/gi, '').trim() : '';
-        const rawText = promptText ? `«${promptText}»` : actionDesc;
+        const promptText = cleanPromptText(game.spell!.prompt);
+        const actionDesc = game.spell!.patch ? cleanPromptText(describeDecree(game.spell!.patch)[0]?.replace(/\s*\[цель:.*?\]/gi, '')) : '';
+        const rawText = promptText || actionDesc;
         const isSpecial = (promptText || actionDesc).startsWith('⚡');
         const timeLeft = game.spell!.castAt ? Math.max(0, Math.ceil(game.spell!.castAt - game.age)) : null;
         return (
@@ -3117,7 +3122,7 @@ export default function Home() {
             <div className="decree-pill-text">
               {promptText ? (
                 <>
-                  <span>«{promptText}»</span>
+                  <span>{promptText}</span>
                   {actionDesc && actionDesc !== promptText && (
                     <small style={{ opacity: 0.85, fontWeight: 700, marginLeft: 6 }}>· {actionDesc}</small>
                   )}
@@ -3131,7 +3136,7 @@ export default function Home() {
       })()}
       {!game.spell && game.announcement && game.announcement.until > game.age && (() => {
         const authorTeam = game.announcement!.team;
-        const rawText = game.announcement!.text.replace(/\s*\[цель:.*?\]/gi, '').trim();
+        const rawText = cleanPromptText(game.announcement!.text.replace(/\s*\[цель:.*?\]/gi, ''));
         const isSpecial = rawText.startsWith('⚡');
         const timeLeft = Math.max(0, Math.ceil(game.announcement!.until - game.age));
         return (
@@ -3158,6 +3163,9 @@ export default function Home() {
         const isCountdownActive = (game.spell.castAt ?? 0) > game.age;
         const hasCounter = !!game.spell.counterPrompt;
         const timeLeft = Math.max(0, Math.ceil((game.spell.castAt ?? game.age) - game.age));
+        const counterTeam = game.spell.counterTeam ?? 'red';
+        const counterAuthor = playerName(game, counterTeam);
+        const cleanCounter = cleanPromptText(game.spell.counterPrompt);
 
         return (
           <output
@@ -3191,7 +3199,7 @@ export default function Home() {
                 <Sparkles size={13} className="roulette-sparkle" />
                 <span>
                   {hasCounter
-                    ? '⚔️ ДУЭЛЬ ПРИКАЗОВ: РУЛЕТКА 50% / 50%'
+                    ? '⚔️ ДУЭЛЬ АНТИПРИКАЗОВ'
                     : 'БОЕВОЙ ПРИКАЗ ЛИДЕРА'}
                 </span>
               </div>
@@ -3207,9 +3215,15 @@ export default function Home() {
                   minWidth: 0,
                 }}
               >
-                <span className="roulette-caster" style={{ color: TEAMS[game.spell.team].color }}>
-                  👑 {playerName(game, game.spell.team)}
-                </span>
+                {hasCounter ? (
+                  <span className="roulette-caster" style={{ color: TEAMS[counterTeam].color, fontWeight: 800 }}>
+                    ⚔️ {counterAuthor}
+                  </span>
+                ) : (
+                  <span className="roulette-caster" style={{ color: TEAMS[game.spell.team].color, fontWeight: 800 }}>
+                    👑 {playerName(game, game.spell.team)}
+                  </span>
+                )}
                 <span
                   className={`roulette-outcome-badge ${
                     hasCounter
@@ -3232,19 +3246,19 @@ export default function Home() {
               {hasCounter && (
                 <div className="roulette-counter-duel-row">
                   <span className="roulette-counter-pill">
-                    ⚔️ Анти-приказ ({playerName(game, game.spell.counterTeam ?? 'red')}): «{game.spell.counterPrompt}»
+                    {cleanCounter}
                   </span>
                 </div>
               )}
-              <div className="roulette-countdown-bar">
-                <small>
-                  {hasCounter
-                    ? `Исход решится рулеткой 50/50 через ${timeLeft} с!`
-                    : isCountdownActive
+              {!hasCounter && (
+                <div className="roulette-countdown-bar">
+                  <small>
+                    {isCountdownActive
                       ? `Вступает в силу через ${timeLeft} с (удержите цитадель)`
                       : 'Приказ вступил в силу!'}
-                </small>
-              </div>
+                  </small>
+                </div>
+              )}
             </div>
           </output>
         );
@@ -3256,14 +3270,14 @@ export default function Home() {
         return (
           <div className={`duel-result-toast ${isCounterWinner ? 'counter-win' : 'leader-win'}`}>
             <div className="duel-result-header">
-              <span>{isCounterWinner ? '⚔️ ИТОГ РУЛЕТКИ (50% / 50%)' : '👑 ИТОГ РУЛЕТКИ (50% / 50%)'}</span>
+              <span>⚔️ ДУЭЛЬ АНТИПРИКАЗОВ</span>
               <span>{timeLeft} с</span>
             </div>
             <div className="duel-result-winner" style={{ color: TEAMS[winnerTeam].color }}>
               <span>🏆 {playerName(game, winnerTeam)}</span>
             </div>
             <div className="duel-result-effect">
-              <b>{game.lastDuel.winningText}</b>
+              <b>{cleanPromptText(game.lastDuel.winningText)}</b>
             </div>
           </div>
         );
@@ -3551,13 +3565,13 @@ export default function Home() {
                     </form>
                   ) : (
                     <div className="counter-submitted-badge">
-                      ✓ Ваш анти-приказ «{counterDraft}» принят! Рулетка решит исход дуэли (50% / 50%)…
+                      ✓ Ваш анти-приказ {cleanPromptText(counterDraft)} принят! Рулетка решит исход дуэли (50% / 50%)…
                     </div>
                   )
                 ) : isLeaderTurn ? (
                   <form onSubmit={submitPrompt}>
                     <label htmlFor="wish">
-                      Меняй армии и правила. Нельзя только объявить «я победил».
+                      Меняй армии и правила. Нельзя только объявить: я победил.
                     </label>
                     <div className="wish-input">
                       <textarea

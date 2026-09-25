@@ -98,6 +98,7 @@ export type Spell = {
   counterPrompt?: string;
   counterPatch?: Decree;
   counterOutcome?: 'leader' | 'counter';
+  botChallengeEvaluated?: boolean;
 };
 export type MapEvent = {
   kind: 'deposit' | 'fortress' | 'caravan';
@@ -985,7 +986,7 @@ export function submitCounterSpell(
       counterPatch: counterPatch && validDecree(counterPatch) ? counterPatch : g.spell.counterPatch,
       counterOutcome: outcome,
     },
-    notice: `⚔️ ${casterName} выдвинул АНТИ-ПРИКАЗ: «${cleanPrompt.slice(0, 45)}»! Рулетка 50/50…`,
+    notice: `⚔️ ${casterName} выдвинул АНТИ-ПРИКАЗ: ${cleanPrompt.slice(0, 45)}! Рулетка 50/50…`,
   };
 }
 
@@ -1913,15 +1914,19 @@ export function tick(previous: Game, dt = 0.05): Game {
     if (
       isHumanLeader &&
       !spell.counterPrompt &&
+      !spell.botChallengeEvaluated &&
       g.age - spell.startedAt >= 1.5 &&
       spell.castAt !== undefined &&
       spell.castAt - g.age >= 1.5
     ) {
+      spell.botChallengeEvaluated = true;
       const eligibleBots: Team[] = (['red', 'purple', 'green'] as Team[]).filter(
         (t) => t !== spell.team && (!g.humanTeams || !g.humanTeams.includes(t)) && g.towers.some((tw) => tw.team === t),
       );
-      if (eligibleBots.length > 0) {
-        const botTeam = eligibleBots[Math.floor(Math.random() * eligibleBots.length)];
+      // Each bot writes an anti-decree with 20-30% probability
+      const willingBots = eligibleBots.filter(() => Math.random() < 0.25);
+      if (willingBots.length > 0) {
+        const botTeam = willingBots[Math.floor(Math.random() * willingBots.length)];
         const pick = generateContextualBotCounter(spell.prompt, botTeam, spell.team);
         const botOutcome = Math.random() < 0.5 ? 'counter' : 'leader';
         g = submitCounterSpell(g, botTeam, pick.prompt, pick.patch, botOutcome);
@@ -1951,7 +1956,7 @@ export function tick(previous: Game, dt = 0.05): Game {
         if (activeSpell.counterPrompt) {
           const rawPrompt = isCounterWinner ? activeSpell.counterPrompt : activeSpell.prompt;
           const patchDesc = describeDecree(effectivePatch)[0];
-          const winningDesc = rawPrompt ? `«${rawPrompt}»` : patchDesc;
+          const winningDesc = (rawPrompt || patchDesc).replace(/^[«"'\s]+|[»"'\s]+$/g, '').trim();
           const winnerTeam = effectiveTeam;
           const loserTeam = isCounterWinner ? activeSpell.team : (activeSpell.counterTeam ?? 'red');
           const winnerName = playerName(nextG, winnerTeam);

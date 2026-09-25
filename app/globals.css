@@ -4530,10 +4530,10 @@ button.tower:focus-visible,
   background: linear-gradient(135deg, #3b0764 0%, #581c87 100%) !important;
   border: 1.5px solid #a855f7 !important;
   color: #ffffff !important;
-  padding: 6px 10px !important;
-  border-radius: 8px !important;
-  font-size: 12px !important;
-  font-weight: 750 !important;
+  padding: 8px 12px !important;
+  border-radius: 4px 12px 12px 12px !important;
+  font-size: 13px !important;
+  font-weight: 700 !important;
   line-height: 1.4 !important;
   word-break: break-word !important;
   box-shadow: 0 2px 8px rgba(59, 7, 100, 0.35) !important;
