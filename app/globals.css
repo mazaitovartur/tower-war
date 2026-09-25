@@ -4495,6 +4495,17 @@ button.tower:focus-visible,
   font-weight: 800 !important;
 }
 
+.wish-status.cooldown {
+  background: rgba(217, 119, 6, 0.25) !important;
+  border: 1px solid #f59e0b !important;
+  color: #fef3c7 !important;
+  font-weight: 800 !important;
+}
+
+.wish-panel.cooldown-mode .wish-input textarea {
+  opacity: 0.75;
+}
+
 .counter-submit-btn {
   background: linear-gradient(135deg, #9333ea, #7e22ce) !important;
   color: #ffffff !important;

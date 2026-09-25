@@ -1152,6 +1152,14 @@ export default function Home() {
     }
     if (recording || paused || help || current.result) return;
     if (current.age < DEVELOPMENT_SECONDS) return;
+    const cooldownEnd = current.decreeCooldownUntil?.[myTeam] ?? 0;
+    const cooldownLeft = Math.max(0, Math.ceil(cooldownEnd - current.age));
+    if (cooldownLeft > 0) {
+      setPromptMessage(`Перезарядка указа: ещё ${cooldownLeft} с (доступно раз в 1.5 мин)`);
+      setPromptIsError(true);
+      playError();
+      return;
+    }
     if (
       pending.current ||
       current.authority !== myTeam ||
@@ -3161,11 +3169,16 @@ export default function Home() {
       })()}
       {game.spell && (() => {
         const isCountdownActive = (game.spell.castAt ?? 0) > game.age;
-        const hasCounter = !!game.spell.counterPrompt;
+        const candidates = game.spell.counterCandidates && game.spell.counterCandidates.length > 0
+          ? game.spell.counterCandidates
+          : game.spell.counterPrompt
+            ? [{ team: game.spell.counterTeam ?? 'red', prompt: game.spell.counterPrompt }]
+            : [];
+        const hasCounter = candidates.length > 0;
         const timeLeft = Math.max(0, Math.ceil((game.spell.castAt ?? game.age) - game.age));
-        const counterTeam = game.spell.counterTeam ?? 'red';
+        const primaryCandidate = candidates[0];
+        const counterTeam = primaryCandidate ? primaryCandidate.team : (game.spell.counterTeam ?? 'red');
         const counterAuthor = playerName(game, counterTeam);
-        const cleanCounter = cleanPromptText(game.spell.counterPrompt);
 
         return (
           <output
@@ -3216,8 +3229,8 @@ export default function Home() {
                 }}
               >
                 {hasCounter ? (
-                  <span className="roulette-caster" style={{ color: TEAMS[counterTeam].color, fontWeight: 800 }}>
-                    ⚔️ {counterAuthor}
+                  <span className="roulette-caster" style={{ color: candidates.length > 1 ? '#f59e0b' : TEAMS[counterTeam].color, fontWeight: 800 }}>
+                    {candidates.length > 1 ? `⚔️ Вызовы (${candidates.length})` : `⚔️ ${counterAuthor}`}
                   </span>
                 ) : (
                   <span className="roulette-caster" style={{ color: TEAMS[game.spell.team].color, fontWeight: 800 }}>
@@ -3244,10 +3257,24 @@ export default function Home() {
                 </span>
               </div>
               {hasCounter && (
-                <div className="roulette-counter-duel-row">
-                  <span className="roulette-counter-pill">
-                    {cleanCounter}
-                  </span>
+                <div className="roulette-counter-duel-row" style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  {candidates.length > 1 && (
+                    <div style={{ fontSize: '11px', fontWeight: 700, color: '#f59e0b', padding: '1px 2px' }}>
+                      🎲 Поступило {candidates.length} анти-приказа · рулетка выберет один (50% против Лидера):
+                    </div>
+                  )}
+                  {candidates.map((cand, idx) => (
+                    <div key={cand.team + idx} style={{ width: '100%' }}>
+                      {candidates.length > 1 && (
+                        <div style={{ color: TEAMS[cand.team].color, fontWeight: 800, fontSize: '11px', marginBottom: '2px' }}>
+                          ⚔️ {playerName(game, cand.team)}
+                        </div>
+                      )}
+                      <span className="roulette-counter-pill">
+                        {cleanPromptText(cand.prompt)}
+                      </span>
+                    </div>
+                  ))}
                 </div>
               )}
               {!hasCounter && (
@@ -3482,9 +3509,13 @@ export default function Home() {
               ? Math.max(0, Math.ceil((game.spell!.castAt ?? (game.spell!.startedAt + 15)) - game.age))
               : 0;
 
+            const cooldownEnd = game.decreeCooldownUntil?.[myTeam] ?? 0;
+            const cooldownLeft = Math.max(0, Math.ceil(cooldownEnd - game.age));
+            const isOnCooldown = isLeaderTurn && cooldownLeft > 0;
+
             return (
               <section
-                className={`wish-panel ${isAntiMode ? 'anti-mode granted' : isLeaderTurn ? 'granted' : 'locked'}`}
+                className={`wish-panel ${isAntiMode ? 'anti-mode granted' : isLeaderTurn ? (isOnCooldown ? 'granted cooldown-mode' : 'granted') : 'locked'}`}
               >
                 <div className="wish-heading">
                   <span className="wish-medal">
@@ -3517,11 +3548,13 @@ export default function Home() {
                     </h2>
                   </div>
                   <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <span className={`wish-status ${isAntiMode ? 'anti' : ''}`}>
+                    <span className={`wish-status ${isAntiMode ? 'anti' : isOnCooldown ? 'cooldown' : ''}`}>
                       {isAntiMode
                         ? `⏳ ${antiSecondsLeft} с`
                         : isLeaderTurn
-                          ? '👑 ВАША ВЛАСТЬ'
+                          ? isOnCooldown
+                            ? `⏳ КД: ${Math.floor(cooldownLeft / 60)}:${String(cooldownLeft % 60).padStart(2, '0')}`
+                            : '👑 ВАША ВЛАСТЬ'
                           : `${Math.floor(money.earned)} ОЧКОВ ЭКОНОМИКИ`}
                     </span>
                   </div>
@@ -3571,7 +3604,7 @@ export default function Home() {
                       <textarea
                         id="wish"
                         value={draft}
-                        disabled={paused || help || busy || !!game.spell}
+                        disabled={paused || help || busy || !!game.spell || isOnCooldown}
                         onPaste={blockPaste}
                         onDrop={blockPaste}
                         onDragOver={(e) => e.preventDefault()}
@@ -3595,7 +3628,7 @@ export default function Home() {
                           }
                           if (e.key === 'Enter' && !e.shiftKey) {
                             e.preventDefault();
-                            if (!paused && !help && !busy && !game.spell && draft.trim()) {
+                            if (!paused && !help && !busy && !game.spell && !isOnCooldown && draft.trim()) {
                               submitPrompt(e as unknown as React.FormEvent);
                             }
                           }
@@ -3611,12 +3644,12 @@ export default function Home() {
                         }}
                         maxLength={350}
                         rows={2}
-                        placeholder="Введите приказ…"
+                        placeholder={isOnCooldown ? `Перезарядка указа: ${Math.floor(cooldownLeft / 60)}:${String(cooldownLeft % 60).padStart(2, '0')} (раз в 1.5 мин)` : "Введите приказ…"}
                       />
                       <button
                         type="submit"
                         disabled={
-                          paused || help || busy || !!game.spell || !draft.trim()
+                          paused || help || busy || !!game.spell || isOnCooldown || !draft.trim()
                         }
                       >
                         <Send size={20} />
@@ -3625,22 +3658,26 @@ export default function Home() {
                     </div>
                     <div className="wish-meta">
                       <span>
-                        {busy
-                          ? 'Бой продолжается. Удерживайте лидерство…'
-                          : provider === 'mistral'
-                            ? 'Желание понимает ИИ'
-                            : provider === 'loading'
-                              ? 'Проверяем связь…'
-                              : 'Простые приказы · ИИ ещё не подключён'}
+                        {isOnCooldown
+                          ? `⏳ Перезарядка указа: ещё ${Math.floor(cooldownLeft / 60)}:${String(cooldownLeft % 60).padStart(2, '0')} (доступно раз в 1.5 мин)`
+                          : busy
+                            ? 'Бой продолжается. Удерживайте лидерство…'
+                            : provider === 'mistral'
+                              ? 'Желание понимает ИИ'
+                              : provider === 'loading'
+                                ? 'Проверяем связь…'
+                                : 'Простые приказы · ИИ ещё не подключён'}
                       </span>
                       <span
                         className={`typing-clock ${typingSeconds <= 3 ? 'urgent' : ''}`}
                       >
                         {busy
                           ? 'Приказ отправлен'
-                          : typingDeadline
-                            ? `${typingSeconds.toFixed(1)} с`
-                            : '20 с на ввод · без вставки'}{' '}
+                          : isOnCooldown
+                            ? `КД ${cooldownLeft} с`
+                            : typingDeadline
+                              ? `${typingSeconds.toFixed(1)} с`
+                              : '20 с на ввод · без вставки'}{' '}
                         · {draft.length}/350
                       </span>
                     </div>

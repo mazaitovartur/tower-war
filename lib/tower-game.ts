@@ -85,6 +85,11 @@ export type Clash = {
   teamB: Team;
 };
 export type Specialty = 'economy' | 'fortress' | 'swarm' | 'elite';
+export type CounterCandidate = {
+  team: Team;
+  prompt: string;
+  patch?: Decree;
+};
 export type Spell = {
   team: Team;
   epoch: number;
@@ -94,6 +99,7 @@ export type Spell = {
   patch?: Decree;
   debuff?: Debuff | null;
   roll?: string;
+  counterCandidates?: CounterCandidate[];
   counterTeam?: Team;
   counterPrompt?: string;
   counterPatch?: Decree;
@@ -179,6 +185,7 @@ export type Game = {
   frozen?: Partial<Record<Team, number>>;
   shielded?: Partial<Record<Team, number>>;
   decreeLog: { team: Team; text: string; at: number }[];
+  decreeCooldownUntil?: Record<Team, number>;
 };
 export const TEAMS = {
   you: { name: 'Я', color: '#4295ff' },
@@ -192,6 +199,7 @@ export function playerName(g: Game, team: Team) {
 export const TEAM_IDS = Object.keys(TEAMS) as Team[];
 export const DURATION = 720;
 export const DEVELOPMENT_SECONDS = 120;
+export const DECREE_COOLDOWN_SECONDS = 90;
 export const WORLD_WIDTH = 2400;
 export const WORLD_HEIGHT = 1700;
 const MOVE_SPEED = 2.2;
@@ -458,6 +466,7 @@ export function initialGame(): Game {
     growth: record(() => 1),
     speed: record(() => 1),
     decreeLog: [],
+    decreeCooldownUntil: record(() => 0),
   };
 }
 export function workers(t: Tower) {
@@ -946,10 +955,20 @@ export function startSpell(
   prompt: string,
   roll = 'disabled',
 ): Game {
-  if (g.inputLocked?.[team] || g.result || g.spell || leader(g) !== team)
+  if (
+    g.inputLocked?.[team] ||
+    g.result ||
+    g.spell ||
+    leader(g) !== team ||
+    (g.decreeCooldownUntil?.[team] ?? 0) > g.age
+  )
     return g;
   return {
     ...announcePrompt(g, team, prompt),
+    decreeCooldownUntil: {
+      ...(g.decreeCooldownUntil ?? record(() => 0)),
+      [team]: g.age + DECREE_COOLDOWN_SECONDS,
+    },
     spell: {
       team,
       epoch: g.authorityEpoch,
@@ -957,6 +976,7 @@ export function startSpell(
       startedAt: g.age,
       castAt: g.age + 15,
       roll,
+      counterCandidates: [],
     },
   };
 }
@@ -970,20 +990,33 @@ export function submitCounterSpell(
   if (
     !g.spell ||
     g.spell.team === team ||
-    g.spell.counterPrompt ||
     !counterPrompt.trim()
   )
     return g;
   const cleanPrompt = counterPrompt.trim().slice(0, 350);
   const casterName = playerName(g, team);
-  const outcome = counterOutcome ?? (Math.random() < 0.5 ? 'counter' : 'leader');
+  const outcome = counterOutcome ?? g.spell.counterOutcome ?? (Math.random() < 0.5 ? 'counter' : 'leader');
+
+  const existing = g.spell.counterCandidates ?? [];
+  const nextCandidates: CounterCandidate[] = [
+    ...existing.filter((c) => c.team !== team),
+    {
+      team,
+      prompt: cleanPrompt,
+      patch: counterPatch && validDecree(counterPatch) ? counterPatch : undefined,
+    },
+  ];
+
+  const primary = nextCandidates[0];
+
   return {
     ...g,
     spell: {
       ...g.spell,
-      counterTeam: team,
-      counterPrompt: cleanPrompt,
-      counterPatch: counterPatch && validDecree(counterPatch) ? counterPatch : g.spell.counterPatch,
+      counterCandidates: nextCandidates,
+      counterTeam: primary.team,
+      counterPrompt: primary.prompt,
+      counterPatch: (counterPatch && validDecree(counterPatch)) ? counterPatch : g.spell.counterPatch,
       counterOutcome: outcome,
     },
     notice: `⚔️ ${casterName} выдвинул АНТИ-ПРИКАЗ: ${cleanPrompt.slice(0, 45)}! Рулетка 50/50…`,
@@ -1823,6 +1856,7 @@ export function tick(previous: Game, dt = 0.05): Game {
     !((g.humanTeams ?? ['you']).includes(g.authority)) &&
     g.age - g.leaderSince >= 6 &&
     g.age >= g.botDecreeAt &&
+    (g.decreeCooldownUntil?.[g.authority] ?? 0) <= g.age &&
     !g.spell
   ) {
     const leaderTeam = g.authority;
@@ -1904,16 +1938,12 @@ export function tick(previous: Game, dt = 0.05): Game {
       debuff,
       rollDebuff ? 'debuff' : 'pure',
     );
-    g.botDecreeAt = g.age + 20 + Math.floor(Math.random() * 10);
+    g.botDecreeAt = g.age + DECREE_COOLDOWN_SECONDS;
   }
   if (g.spell) {
     const spell = g.spell;
-    // In games with bots: if a human player is the leader and no counter has been submitted yet,
-    // a rival bot challenges with an anti-decree after 1.5 seconds!
-    const isHumanLeader = !g.humanTeams || g.humanTeams.includes(spell.team);
+    // In games with bots: rival bots challenge with an anti-decree with 33% probability each!
     if (
-      isHumanLeader &&
-      !spell.counterPrompt &&
       !spell.botChallengeEvaluated &&
       g.age - spell.startedAt >= 1.5 &&
       spell.castAt !== undefined &&
@@ -1923,13 +1953,11 @@ export function tick(previous: Game, dt = 0.05): Game {
       const eligibleBots: Team[] = (['red', 'purple', 'green'] as Team[]).filter(
         (t) => t !== spell.team && (!g.humanTeams || !g.humanTeams.includes(t)) && g.towers.some((tw) => tw.team === t),
       );
-      // Each bot writes an anti-decree with 20-30% probability
-      const willingBots = eligibleBots.filter(() => Math.random() < 0.25);
-      if (willingBots.length > 0) {
-        const botTeam = willingBots[Math.floor(Math.random() * willingBots.length)];
+      // Each bot writes an anti-decree with 33% probability
+      const willingBots = eligibleBots.filter(() => Math.random() < 0.33);
+      for (const botTeam of willingBots) {
         const pick = generateContextualBotCounter(spell.prompt, botTeam, spell.team);
-        const botOutcome = Math.random() < 0.5 ? 'counter' : 'leader';
-        g = submitCounterSpell(g, botTeam, pick.prompt, pick.patch, botOutcome);
+        g = submitCounterSpell(g, botTeam, pick.prompt, pick.patch);
       }
     }
 
@@ -1943,6 +1971,17 @@ export function tick(previous: Game, dt = 0.05): Game {
         g.age >= activeSpell.castAt &&
         activeSpell.patch
       ) {
+        // If multiple anti-decrees were submitted, randomly pick ONE of them!
+        const candidates = activeSpell.counterCandidates ?? [];
+        if (candidates.length > 0) {
+          const chosen = candidates[Math.floor(Math.random() * candidates.length)];
+          activeSpell.counterTeam = chosen.team;
+          activeSpell.counterPrompt = chosen.prompt;
+          if (chosen.patch && validDecree(chosen.patch)) {
+            activeSpell.counterPatch = chosen.patch;
+          }
+        }
+
         const isCounterWinner = activeSpell.counterOutcome === 'counter' && !!activeSpell.counterPatch;
         const effectivePatch: Decree = isCounterWinner && activeSpell.counterPatch ? activeSpell.counterPatch : activeSpell.patch;
         const effectiveTeam: Team = isCounterWinner && activeSpell.counterTeam ? activeSpell.counterTeam : activeSpell.team;
