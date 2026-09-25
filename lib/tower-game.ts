@@ -1008,11 +1008,14 @@ export function submitCounterSpell(
   ];
 
   const primary = nextCandidates[0];
+  const isFirstCounter = !g.spell.counterPrompt && (!g.spell.counterCandidates || g.spell.counterCandidates.length === 0);
+  const duelCastAt = isFirstCounter ? g.age + 6 : (g.spell.castAt ? Math.min(g.spell.castAt, g.age + 6) : g.age + 6);
 
   return {
     ...g,
     spell: {
       ...g.spell,
+      castAt: duelCastAt,
       counterCandidates: nextCandidates,
       counterTeam: primary.team,
       counterPrompt: primary.prompt,
@@ -1963,7 +1966,11 @@ export function tick(previous: Game, dt = 0.05): Game {
 
     if (g.spell) {
       const activeSpell = g.spell;
-      if (g.authority !== activeSpell.team || g.authorityEpoch !== activeSpell.epoch) {
+      const hasRouletteStarted = !!(
+        activeSpell.counterPrompt ||
+        (activeSpell.counterCandidates && activeSpell.counterCandidates.length > 0)
+      );
+      if (!hasRouletteStarted && (g.authority !== activeSpell.team || g.authorityEpoch !== activeSpell.epoch)) {
         g.spell = undefined;
         g.notice = 'Лидер сменился — заклинание сорвано!';
       } else if (
@@ -1986,11 +1993,10 @@ export function tick(previous: Game, dt = 0.05): Game {
         const effectivePatch: Decree = isCounterWinner && activeSpell.counterPatch ? activeSpell.counterPatch : activeSpell.patch;
         const effectiveTeam: Team = isCounterWinner && activeSpell.counterTeam ? activeSpell.counterTeam : activeSpell.team;
 
-        let nextG = applyDecree(
+        let nextG = forceApplyDecree(
           { ...g, spell: undefined },
           effectiveTeam,
           effectivePatch,
-          activeSpell.epoch,
         );
         if (activeSpell.counterPrompt) {
           const rawPrompt = isCounterWinner ? activeSpell.counterPrompt : activeSpell.prompt;
