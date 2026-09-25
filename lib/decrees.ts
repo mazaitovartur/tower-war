@@ -867,3 +867,72 @@ export function describeDecree(d?: Decree | null): string[] {
   }
   return [describeAction(d)];
 }
+
+export function generateCounterDecree(
+  counterText: string,
+  counterTeam: 'you' | 'red' | 'purple' | 'green',
+  leaderPatch?: Decree,
+): Decree {
+  const t = counterText.toLowerCase();
+  if (/(?:башн|шахт|здан|захват|отбер|забер|мои|мо[её]|под\s+контрол|все\s+базы)/i.test(t)) {
+    return {
+      kind: 'batch',
+      actions: [
+        { kind: 'capture', target: 'neutral', amount: 3 },
+        { kind: 'reinforce', target: 'all', amount: 20 },
+      ],
+    };
+  }
+  if (/(?:взрыв|бомб|уничтож|убей|подорв|сотри|казн|удар|молни|сожги)/i.test(t)) {
+    return {
+      kind: 'batch',
+      actions: [
+        { kind: 'explode', target: 'enemies', amount: 35 },
+        { kind: 'lightning', target: 'enemies', amount: 1 },
+      ],
+    };
+  }
+  if (/(?:замороз|лед|останов|стой|буран|метел)/i.test(t)) {
+    return { kind: 'freeze', target: 'enemies', amount: 12 };
+  }
+  if (/(?:щит|купол|защит|неуязвим|брон)/i.test(t)) {
+    return { kind: 'shield', target: counterTeam, amount: 12 };
+  }
+  if (/(?:золот|ресурс|казн|богат|деньг|монет|дерев)/i.test(t)) {
+    return {
+      kind: 'batch',
+      actions: [
+        { kind: 'gold', target: counterTeam, amount: 180 },
+        { kind: 'resources', target: counterTeam, amount: 120 },
+      ],
+    };
+  }
+  if (/(?:атак|войск|арми|солдат|напад|штурм|скорост|ускор)/i.test(t)) {
+    return {
+      kind: 'batch',
+      actions: [
+        { kind: 'speed', target: counterTeam, amount: 1.8 },
+        { kind: 'reinforce', target: counterTeam, amount: 30 },
+      ],
+    };
+  }
+  if (/(?:зомби|нежит|мертв|орда)/i.test(t)) {
+    return { kind: 'zombie', target: 'enemies', amount: 30 };
+  }
+  if (/(?:отмен|наоборот|вспять|против|парир|зеркал|нет)/i.test(t)) {
+    return {
+      kind: 'batch',
+      actions: [
+        { kind: 'shield', target: counterTeam, amount: 10 },
+        { kind: 'freeze', target: 'enemies', amount: 10 },
+      ],
+    };
+  }
+  return {
+    kind: 'batch',
+    actions: [
+      { kind: 'shield', target: counterTeam, amount: 10 },
+      { kind: 'reinforce', target: 'main', amount: 30 },
+    ],
+  };
+}

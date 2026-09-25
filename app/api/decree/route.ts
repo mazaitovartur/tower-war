@@ -1,7 +1,7 @@
 import { validDebuff } from '@/lib/magic';
 import { initialGame } from '@/lib/tower-game';
 import { env } from 'cloudflare:workers';
-import { localDecree, validDecree, directVictory, isProfaneBoast } from '@/lib/decrees';
+import { localDecree, validDecree, directVictory, isProfaneBoast, generateCounterDecree } from '@/lib/decrees';
 const FALLBACK_MISTRAL_KEY = 'mstrl_KKX5UArdkXJRrIpeGKyEkujYBzjvwnFj_0nQPGw';
 
 const settings = () => {
@@ -110,10 +110,11 @@ export async function POST(request: Request) {
 
   // If matched by fast local templates, apply immediately
   const local = localDecree(body.prompt, casterName);
-  const localCounter = counterPrompt ? localDecree(counterPrompt, counterNickname) : null;
-  if (local && validDecree(local) && (!counterPrompt || (localCounter && validDecree(localCounter)))) {
+  const localCounter = counterPrompt ? (localDecree(counterPrompt, counterNickname) || generateCounterDecree(counterPrompt, 'red')) : null;
+  if ((local && validDecree(local)) || (counterPrompt && localCounter && validDecree(localCounter))) {
+    const leaderPatch = local && validDecree(local) ? local : { kind: 'batch', actions: [{ kind: 'speed', target: 'all', amount: 1.5 }] };
     return Response.json({
-      patch: local,
+      patch: leaderPatch,
       counterPatch: localCounter && validDecree(localCounter) ? localCounter : null,
       counterOutcome,
       provider: 'local',

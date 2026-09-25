@@ -54,7 +54,7 @@ import {
   type Recording,
   type ReplayState,
 } from '@/lib/replays';
-import { validDecree, describeDecree } from '@/lib/decrees';
+import { validDecree, describeDecree, localDecree, generateCounterDecree, type Decree } from '@/lib/decrees';
 import { validDebuff } from '@/lib/magic';
 import {
   DURATION,
@@ -955,7 +955,7 @@ export default function Home() {
         case 'SPELL_READY':
           return readySpell(g, action.patch, action.epoch, action.debuff, action.roll, action.counterPatch, action.counterOutcome);
         case 'COUNTER_SPELL_SUBMIT':
-          return submitCounterSpell(g, actor, action.counterPrompt);
+          return submitCounterSpell(g, actor, action.counterPrompt, action.counterPatch, action.counterOutcome);
         default:
           return g;
       }
@@ -990,7 +990,7 @@ export default function Home() {
         case 'SPELL_READY':
           return readySpell(g, action.patch, action.epoch, action.debuff, action.roll, action.counterPatch, action.counterOutcome);
         case 'COUNTER_SPELL_SUBMIT':
-          return submitCounterSpell(g, myTeam, action.counterPrompt);
+          return submitCounterSpell(g, myTeam, action.counterPrompt, action.counterPatch, action.counterOutcome);
         default:
           return g;
       }
@@ -1292,15 +1292,25 @@ export default function Home() {
     if (!spell || spell.team === myTeam || !counterDraft.trim() || counterSubmitted) return;
     const cleanCounter = counterDraft.trim();
     setCounterSubmitted(true);
-    dispatchPlayerAction({
-      kind: 'COUNTER_SPELL_SUBMIT',
-      counterPrompt: cleanCounter,
-    });
-    setPromptMessage('✓ Анти-приказ принят! Ожидание рулетки дуэли (50% / 50%)');
-    setPromptIsError(false);
 
     const myCounterName = playerName(gameRef.current, myTeam);
     const leaderName = playerName(gameRef.current, spell.team);
+
+    // Guaranteed local resolution so anti-decree always works immediately against bots and offline
+    const localPatch =
+      (localDecree(cleanCounter, myCounterName) as Decree | null) ||
+      generateCounterDecree(cleanCounter, myTeam, spell.patch);
+    const initialOutcome: 'leader' | 'counter' = Math.random() < 0.5 ? 'counter' : 'leader';
+
+    dispatchPlayerAction({
+      kind: 'COUNTER_SPELL_SUBMIT',
+      counterPrompt: cleanCounter,
+      counterPatch: localPatch,
+      counterOutcome: initialOutcome,
+    });
+    setPromptMessage('✓ Анти-приказ принят! Дуэль приказов: рулетка 50% / 50%');
+    setPromptIsError(false);
+
     try {
       const response = await fetch('/api/decree', {
         method: 'POST',
@@ -1329,7 +1339,7 @@ export default function Home() {
             debuff: spell.debuff ?? null,
             roll: spell.roll ?? 'disabled',
             counterPatch: data.counterPatch,
-            counterOutcome: (data.counterOutcome === 'counter' || Math.random() < 0.5) ? 'counter' : 'leader',
+            counterOutcome: data.counterOutcome ?? initialOutcome,
           });
         }
       }
@@ -3128,97 +3138,111 @@ export default function Home() {
           </div>
         );
       })()}
-      {game.spell && (
-        <output
-          className="spell-toast roulette-card-enhanced"
-          style={{
-            width: '100%',
-            maxWidth: '100%',
-            boxSizing: 'border-box',
-            overflow: 'hidden',
-            overflowX: 'hidden',
-          }}
-        >
-          <div className="roulette-disc-wrap">
-            <div
-              className={`roulette-disc ${game.spell.patch || game.spell.counterOutcome ? 'settled' : ''} ${game.spell.counterOutcome === 'counter' ? 'counter-win' : 'pure'}`}
-            >
-              {game.spell.counterPrompt ? '⚔️' : game.spell.patch ? '👑' : '📜'}
-            </div>
-          </div>
-          <div
-            className="roulette-card-body"
+      {game.spell && (() => {
+        const isCountdownActive = (game.spell.castAt ?? 0) > game.age;
+        const hasCounter = !!game.spell.counterPrompt;
+        const isDuelSpinning = hasCounter && isCountdownActive;
+        const isSettled = !isCountdownActive || (!hasCounter && !!game.spell.patch);
+        const counterWon = game.spell.counterOutcome === 'counter';
+
+        return (
+          <output
+            className="spell-toast roulette-card-enhanced"
             style={{
-              minWidth: 0,
               width: '100%',
               maxWidth: '100%',
-              overflow: 'hidden',
               boxSizing: 'border-box',
+              overflow: 'hidden',
+              overflowX: 'hidden',
             }}
           >
-            <div className="roulette-top-badge">
-              <Sparkles size={13} className="roulette-sparkle" />
-              <span>
-                {game.spell.counterPrompt
-                  ? '⚔️ ДУЭЛЬ ПРИКАЗОВ: РУЛЕТКА 50% / 50%'
-                  : 'БОЕВОЙ ПРИКАЗ ЛИДЕРА'}
-              </span>
+            <div className="roulette-disc-wrap">
+              <div
+                className={`roulette-disc ${isSettled ? 'settled' : ''} ${hasCounter ? (counterWon && isSettled ? 'counter-win' : 'pure') : 'pure'}`}
+              >
+                {isDuelSpinning ? '🎲' : hasCounter ? (counterWon ? '⚔️' : '👑') : game.spell.patch ? '👑' : '📜'}
+              </div>
             </div>
             <div
-              className="roulette-status-line"
+              className="roulette-card-body"
               style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                flexWrap: 'wrap',
-                gap: '6px',
-                width: '100%',
                 minWidth: 0,
+                width: '100%',
+                maxWidth: '100%',
+                overflow: 'hidden',
+                boxSizing: 'border-box',
               }}
             >
-              <span className="roulette-caster" style={{ color: TEAMS[game.spell.team].color }}>
-                {playerName(game, game.spell.team)}
-              </span>
-              <span
-                className={`roulette-outcome-badge ${
-                  game.spell.counterOutcome === 'counter'
-                    ? 'counter-win'
-                    : 'pure'
-                }`}
-                style={{
-                  whiteSpace: 'normal',
-                  wordBreak: 'break-word',
-                  maxWidth: '100%',
-                }}
-              >
-                {game.spell.counterPrompt
-                  ? game.spell.counterOutcome
-                    ? game.spell.counterOutcome === 'counter'
-                      ? '⚔️ Анти-приказ победил (50%)!'
-                      : '👑 Воля Лидера победила дуэль (50%)!'
-                    : '⚔️ Дуэль приказов: рулетка 50% / 50%…'
-                  : game.spell.patch
-                    ? '✓ Приказ утверждён'
-                    : 'Подготовка приказа…'}
-              </span>
-            </div>
-            {game.spell.counterPrompt && (
-              <div className="roulette-counter-duel-row">
-                <span className="roulette-counter-pill">
-                  ⚔️ Анти-приказ ({playerName(game, game.spell.counterTeam ?? 'red')}): «{game.spell.counterPrompt}»
+              <div className="roulette-top-badge">
+                <Sparkles size={13} className="roulette-sparkle" />
+                <span>
+                  {hasCounter
+                    ? '⚔️ ДУЭЛЬ ПРИКАЗОВ: РУЛЕТКА 50% / 50%'
+                    : 'БОЕВОЙ ПРИКАЗ ЛИДЕРА'}
                 </span>
               </div>
-            )}
-            <div className="roulette-countdown-bar">
-              <small>
-                {game.spell.patch
-                  ? `Вступает в силу через ${Math.max(0, Math.ceil((game.spell.castAt ?? game.age) - game.age))} с (удержите цитадель)`
-                  : 'Бой продолжается…'}
-              </small>
+              <div
+                className="roulette-status-line"
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  flexWrap: 'wrap',
+                  gap: '6px',
+                  width: '100%',
+                  minWidth: 0,
+                }}
+              >
+                <span className="roulette-caster" style={{ color: TEAMS[game.spell.team].color }}>
+                  {playerName(game, game.spell.team)}
+                </span>
+                <span
+                  className={`roulette-outcome-badge ${
+                    hasCounter
+                      ? isDuelSpinning
+                        ? 'spinning'
+                        : counterWon
+                          ? 'counter-win'
+                          : 'pure'
+                      : 'pure'
+                  }`}
+                  style={{
+                    whiteSpace: 'normal',
+                    wordBreak: 'break-word',
+                    maxWidth: '100%',
+                  }}
+                >
+                  {hasCounter
+                    ? isDuelSpinning
+                      ? '⚔️ Рулетка дуэли 50% / 50% вращается…'
+                      : counterWon
+                        ? `⚔️ Анти-приказ (${playerName(game, game.spell.counterTeam ?? 'red')}) победил!`
+                        : `👑 Воля Лидера (${playerName(game, game.spell.team)}) победила!`
+                    : game.spell.patch
+                      ? '✓ Приказ утверждён'
+                      : 'Подготовка приказа…'}
+                </span>
+              </div>
+              {hasCounter && (
+                <div className="roulette-counter-duel-row">
+                  <span className="roulette-counter-pill">
+                    ⚔️ Анти-приказ ({playerName(game, game.spell.counterTeam ?? 'red')}): «{game.spell.counterPrompt}»
+                  </span>
+                </div>
+              )}
+              <div className="roulette-countdown-bar">
+                <small>
+                  {game.spell.patch
+                    ? isCountdownActive
+                      ? `Вступает в силу через ${Math.max(0, Math.ceil((game.spell.castAt ?? game.age) - game.age))} с (удержите цитадель)`
+                      : 'Приказ вступил в силу!'
+                    : 'Бой продолжается…'}
+                </small>
+              </div>
             </div>
-          </div>
-        </output>
-      )}
+          </output>
+        );
+      })()}
       {(game.curses ?? [])
         .filter((c) => c.team === 'you')
         .map((c, i) => (

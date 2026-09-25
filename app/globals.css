@@ -2961,6 +2961,18 @@ body,
   border: 1px solid #fca5a5;
 }
 
+.roulette-outcome-badge.spinning {
+  color: #9a3412;
+  background: #ffedd5;
+  border: 1px solid #fdba74;
+}
+
+.roulette-outcome-badge.counter-win {
+  color: #6b21a8;
+  background: #f3e8ff;
+  border: 1px solid #d8b4fe;
+}
+
 /* Hero prompt container highlighting the decree */
 .roulette-prompt-hero {
   background: linear-gradient(135deg, rgba(24, 15, 7, 0.94) 0%, rgba(38, 22, 9, 0.97) 100%);

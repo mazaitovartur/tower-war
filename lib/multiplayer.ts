@@ -31,7 +31,7 @@ export type NetworkMessage =
         | { kind: 'MESSAGE'; towerId: number; text: string }
         | { kind: 'SPELL_START'; prompt: string; roll: 'disabled' | 'rolling' }
         | { kind: 'SPELL_READY'; patch: Decree; epoch: number; debuff: Debuff | null; roll: string; counterPatch?: Decree; counterOutcome?: 'leader' | 'counter' }
-        | { kind: 'COUNTER_SPELL_SUBMIT'; counterPrompt: string };
+        | { kind: 'COUNTER_SPELL_SUBMIT'; counterPrompt: string; counterPatch?: Decree; counterOutcome?: 'leader' | 'counter' };
       team: Team;
     }
   | { type: 'GAME_SYNC'; game: Game };

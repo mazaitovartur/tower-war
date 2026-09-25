@@ -952,6 +952,8 @@ export function submitCounterSpell(
   g: Game,
   team: Team,
   counterPrompt: string,
+  counterPatch?: Decree,
+  counterOutcome?: 'leader' | 'counter',
 ): Game {
   if (
     !g.spell ||
@@ -962,14 +964,17 @@ export function submitCounterSpell(
     return g;
   const cleanPrompt = counterPrompt.trim().slice(0, 350);
   const casterName = playerName(g, team);
+  const outcome = counterOutcome ?? (Math.random() < 0.5 ? 'counter' : 'leader');
   return {
     ...g,
     spell: {
       ...g.spell,
       counterTeam: team,
       counterPrompt: cleanPrompt,
+      counterPatch: counterPatch && validDecree(counterPatch) ? counterPatch : g.spell.counterPatch,
+      counterOutcome: outcome,
     },
-    notice: `⚔️ ${casterName} выдвинул АНТИ-ПРИКАЗ: «${cleanPrompt.slice(0, 45)}»!`,
+    notice: `⚔️ ${casterName} выдвинул АНТИ-ПРИКАЗ: «${cleanPrompt.slice(0, 45)}»! Рулетка 50/50…`,
   };
 }
 
@@ -1701,44 +1706,93 @@ export function tick(previous: Game, dt = 0.05): Game {
   }
   if (g.spell) {
     const spell = g.spell;
-    if (g.authority !== spell.team || g.authorityEpoch !== spell.epoch) {
-      g.spell = undefined;
-      g.notice = 'Лидер сменился — заклинание сорвано!';
-    } else if (
+    // In games with bots: if a human player is the leader and no counter has been submitted yet,
+    // a rival bot challenges with an anti-decree after 3.5 seconds!
+    const isHumanLeader = !g.humanTeams || g.humanTeams.includes(spell.team);
+    if (
+      isHumanLeader &&
+      !spell.counterPrompt &&
+      g.age - spell.startedAt >= 3.5 &&
       spell.castAt !== undefined &&
-      g.age >= spell.castAt &&
-      spell.patch
+      spell.castAt - g.age >= 4
     ) {
-      const effectivePatch =
-        spell.counterOutcome === 'counter' && spell.counterPatch
-          ? spell.counterPatch
-          : spell.patch;
-      const effectiveTeam =
-        spell.counterOutcome === 'counter' && spell.counterTeam
-          ? spell.counterTeam
-          : spell.team;
-
-      g = applyDecree(
-        { ...g, spell: undefined },
-        effectiveTeam,
-        effectivePatch,
-        spell.epoch,
+      const eligibleBots: Team[] = (['red', 'purple', 'green'] as Team[]).filter(
+        (t) => t !== spell.team && (!g.humanTeams || !g.humanTeams.includes(t)) && g.towers.some((tw) => tw.team === t),
       );
-      if (spell.counterOutcome === 'counter') {
-        g.notice = `⚔️ Анти-приказ победил в рулетке и изменил мир!`;
-      } else if (spell.counterPrompt) {
-        g.notice = `👑 Воля Лидера победила анти-приказ в рулетке!`;
-      }
-      if (spell.debuff && spell.counterOutcome !== 'counter') {
-        g.curses = [
-          ...(g.curses ?? []),
-          { team: spell.team, debuff: spell.debuff, at: g.age },
+      if (eligibleBots.length > 0) {
+        const botTeam = eligibleBots[Math.floor(Math.random() * eligibleBots.length)];
+        const botCounterOptions = [
+          {
+            prompt: 'Контрудар: перегрузка и подрыв вражеских орудий!',
+            patch: { kind: 'explode' as const, target: 'enemies' as const, amount: 30 },
+          },
+          {
+            prompt: 'Магический щит: защитный купол цитадели на 10 с!',
+            patch: { kind: 'shield' as const, target: 'all' as const, amount: 10 },
+          },
+          {
+            prompt: 'Диверсия: авангард лидера заморожен на 12 с!',
+            patch: { kind: 'freeze' as const, target: 'enemies' as const, amount: 12 },
+          },
+          {
+            prompt: 'Зеркальная брешь: перехват 150 золота и ресурсов!',
+            patch: { kind: 'gold' as const, target: botTeam, amount: 150 },
+          },
+          {
+            prompt: 'Штабной резерв: призыв +35 элитных защитников!',
+            patch: { kind: 'reinforce' as const, target: 'main' as const, amount: 35 },
+          },
+          {
+            prompt: 'Марш возмездия: ускорение армий соперников ×1.8!',
+            patch: { kind: 'speed' as const, target: 'all' as const, amount: 1.8 },
+          },
         ];
-        g.notice += ` Побочный эффект: ${spell.debuff.title}.`;
+        const pick = botCounterOptions[Math.floor(Math.random() * botCounterOptions.length)];
+        const botOutcome = Math.random() < 0.5 ? 'counter' : 'leader';
+        g = submitCounterSpell(g, botTeam, pick.prompt, pick.patch, botOutcome);
       }
-    } else if (!spell.patch && g.age - spell.startedAt > 25) {
-      g.spell = undefined;
-      g.notice = 'Время ожидания приказа истекло';
+    }
+
+    if (g.spell) {
+      const activeSpell = g.spell;
+      if (g.authority !== activeSpell.team || g.authorityEpoch !== activeSpell.epoch) {
+        g.spell = undefined;
+        g.notice = 'Лидер сменился — заклинание сорвано!';
+      } else if (
+        activeSpell.castAt !== undefined &&
+        g.age >= activeSpell.castAt &&
+        activeSpell.patch
+      ) {
+        const isCounterWinner = activeSpell.counterOutcome === 'counter' && !!activeSpell.counterPatch;
+        const effectivePatch: Decree = isCounterWinner && activeSpell.counterPatch ? activeSpell.counterPatch : activeSpell.patch;
+        const effectiveTeam: Team = isCounterWinner && activeSpell.counterTeam ? activeSpell.counterTeam : activeSpell.team;
+
+        g = applyDecree(
+          { ...g, spell: undefined },
+          effectiveTeam,
+          effectivePatch,
+          activeSpell.epoch,
+        );
+        if (activeSpell.counterPrompt) {
+          if (isCounterWinner) {
+            const winnerName = playerName(g, effectiveTeam);
+            g.notice = `⚔️ Анти-приказ (${winnerName}) победил в рулетке (50%) и изменил мир!`;
+          } else {
+            const leaderName = playerName(g, activeSpell.team);
+            g.notice = `👑 Воля Лидера (${leaderName}) победила дуэль (50%) в рулетке!`;
+          }
+        }
+        if (activeSpell.debuff && activeSpell.counterOutcome !== 'counter') {
+          g.curses = [
+            ...(g.curses ?? []),
+            { team: activeSpell.team, debuff: activeSpell.debuff, at: g.age },
+          ];
+          g.notice += ` Побочный эффект: ${activeSpell.debuff.title}.`;
+        }
+      } else if (!activeSpell.patch && g.age - activeSpell.startedAt > 25) {
+        g.spell = undefined;
+        g.notice = 'Время ожидания приказа истекло';
+      }
     }
   }
 
