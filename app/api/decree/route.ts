@@ -108,14 +108,29 @@ export async function POST(request: Request) {
     },
   ];
 
-  // If matched by fast local templates, apply immediately
+  // If matched by fast local templates and no AI key, apply immediately
   const local = localDecree(body.prompt, casterName);
   const localCounter = counterPrompt ? (localDecree(counterPrompt, counterNickname) || generateCounterDecree(counterPrompt, 'red')) : null;
-  if ((local && validDecree(local)) || (counterPrompt && localCounter && validDecree(localCounter))) {
-    const leaderPatch = local && validDecree(local) ? local : { kind: 'batch', actions: [{ kind: 'speed', target: 'all', amount: 1.5 }] };
+
+  if (!effectiveKey) {
+    if ((local && validDecree(local)) || (counterPrompt && localCounter && validDecree(localCounter))) {
+      const leaderPatch = local && validDecree(local) ? local : { kind: 'batch', actions: [{ kind: 'speed', target: 'all', amount: 1.5 }] };
+      return Response.json({
+        patch: leaderPatch,
+        counterPatch: localCounter && validDecree(localCounter) ? localCounter : null,
+        counterOutcome,
+        provider: 'local',
+        roll: 'disabled',
+        debuff: null,
+      });
+    }
+  }
+
+  // If there is NO counter-prompt and we matched a clear fast local template, apply immediately
+  if (!counterPrompt && local && validDecree(local)) {
     return Response.json({
-      patch: leaderPatch,
-      counterPatch: localCounter && validDecree(localCounter) ? localCounter : null,
+      patch: local,
+      counterPatch: null,
       counterOutcome,
       provider: 'local',
       roll: 'disabled',
@@ -314,6 +329,17 @@ gold/resources: добавить amount золота/древесины указ
       debuff: null,
     });
   } catch {
+    if ((local && validDecree(local)) || (counterPrompt && localCounter && validDecree(localCounter))) {
+      const leaderPatch = local && validDecree(local) ? local : { kind: 'batch', actions: [{ kind: 'speed', target: 'all', amount: 1.5 }] };
+      return Response.json({
+        patch: leaderPatch,
+        counterPatch: localCounter && validDecree(localCounter) ? localCounter : null,
+        counterOutcome,
+        provider: 'local',
+        roll: 'disabled',
+        debuff: null,
+      });
+    }
     return Response.json(
       { error: 'Не удалось обработать приказ через ИИ. Попробуйте сформулировать иначе.' },
       { status: 500 },

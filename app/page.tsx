@@ -655,7 +655,13 @@ export default function Home() {
   );
   const money = game.wallets[myTeam] ?? game.wallets.you;
   const rates = teamIncome(game, myTeam);
-  const totalEarned = TEAM_IDS.reduce((n, t) => n + game.wallets[t].earned, 0);
+  const activeTeams = TEAM_IDS.filter(
+    (t) =>
+      t === myTeam ||
+      game.towers.some((tw) => tw.team === t && tw.ruinedAt === undefined) ||
+      game.troops.some((tr) => tr.team === t),
+  );
+  const totalEarned = activeTeams.reduce((n, t) => n + (game.wallets[t]?.earned ?? 0), 0);
   const currentLeader = economicLeader(game);
   const cost = source ? upgradeCost(source) : null;
   const gunCost = source ? cannonCost(source) : null;
@@ -1723,14 +1729,14 @@ export default function Home() {
         <div
           className="dominion-bar"
           role="img"
-          aria-label={TEAM_IDS.map(
+          aria-label={activeTeams.map(
             (t) =>
-              `${playerName(game, t)}: ${Math.floor(game.wallets[t].earned)} очков`,
+              `${playerName(game, t)}: ${Math.floor(game.wallets[t]?.earned ?? 0)} очков`,
           ).join(', ')}
         >
-          {TEAM_IDS.map((t) => {
-            const pct = totalEarned ? (game.wallets[t].earned / totalEarned) * 100 : 25;
-            const points = Math.floor(game.wallets[t].earned);
+          {activeTeams.map((t) => {
+            const points = Math.floor(game.wallets[t]?.earned ?? 0);
+            const pct = totalEarned ? (points / totalEarned) * 100 : (100 / (activeTeams.length || 1));
             return (
               <span
                 key={t}
@@ -1763,8 +1769,8 @@ export default function Home() {
         className={`economy-rank ${showStats ? 'is-open' : 'is-collapsed'}`}
       >
         <strong>ГОНКА ЭКОНОМИК</strong>
-        {[...TEAM_IDS]
-          .sort((a, b) => game.wallets[b].earned - game.wallets[a].earned)
+        {[...activeTeams]
+          .sort((a, b) => (game.wallets[b]?.earned ?? 0) - (game.wallets[a]?.earned ?? 0))
           .map((t) => (
             <div key={t}>
               <i style={{ background: TEAMS[t].color }} />
@@ -1774,7 +1780,7 @@ export default function Home() {
                   {game.towers.filter((x) => x.team === t).length} зданий
                 </small>
               </span>
-              <b>{Math.floor(game.wallets[t].earned)}</b>
+              <b>{Math.floor(game.wallets[t]?.earned ?? 0)}</b>
             </div>
           ))}
         <small>
@@ -3086,10 +3092,10 @@ export default function Home() {
       )}
       {game.spell && (() => {
         const authorTeam = game.spell!.team;
-        const rawText = ((game.spell!.patch ? describeDecree(game.spell!.patch)[0] : '') || game.spell!.prompt)
-          .replace(/\s*\[цель:.*?\]/gi, '')
-          .trim();
-        const isSpecial = rawText.startsWith('⚡');
+        const promptText = game.spell!.prompt?.trim();
+        const actionDesc = game.spell!.patch ? describeDecree(game.spell!.patch)[0]?.replace(/\s*\[цель:.*?\]/gi, '').trim() : '';
+        const rawText = promptText ? `«${promptText}»` : actionDesc;
+        const isSpecial = (promptText || actionDesc).startsWith('⚡');
         const timeLeft = game.spell!.castAt ? Math.max(0, Math.ceil(game.spell!.castAt - game.age)) : null;
         return (
           <div
@@ -3107,7 +3113,18 @@ export default function Home() {
                 <span className="decree-pill-time">{timeLeft} с</span>
               )}
             </div>
-            <div className="decree-pill-text">{rawText}</div>
+            <div className="decree-pill-text">
+              {promptText ? (
+                <>
+                  <span>«{promptText}»</span>
+                  {actionDesc && actionDesc !== promptText && (
+                    <small style={{ opacity: 0.85, fontWeight: 700, marginLeft: 6 }}>· {actionDesc}</small>
+                  )}
+                </>
+              ) : (
+                rawText
+              )}
+            </div>
           </div>
         );
       })()}

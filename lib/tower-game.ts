@@ -1785,7 +1785,9 @@ export function tick(previous: Game, dt = 0.05): Game {
           activeSpell.epoch,
         );
         if (activeSpell.counterPrompt) {
-          const winningDesc = describeDecree(effectivePatch)[0] || (isCounterWinner ? activeSpell.counterPrompt : activeSpell.prompt);
+          const rawPrompt = isCounterWinner ? activeSpell.counterPrompt : activeSpell.prompt;
+          const patchDesc = describeDecree(effectivePatch)[0];
+          const winningDesc = rawPrompt ? `«${rawPrompt}»` : patchDesc;
           const winnerTeam = effectiveTeam;
           const loserTeam = isCounterWinner ? activeSpell.team : (activeSpell.counterTeam ?? 'red');
           const winnerName = playerName(nextG, winnerTeam);
@@ -1802,9 +1804,9 @@ export function tick(previous: Game, dt = 0.05): Game {
           };
 
           if (isCounterWinner) {
-            nextG.notice = `⚔️ Анти-приказ (${winnerName}) победил в рулетке (50%)! «${winningDesc}»`;
+            nextG.notice = `⚔️ Анти-приказ (${winnerName}) победил в рулетке (50%)! ${winningDesc}`;
           } else {
-            nextG.notice = `👑 Воля Лидера (${winnerName}) победила дуэль (50%)! «${winningDesc}»`;
+            nextG.notice = `👑 Воля Лидера (${winnerName}) победила дуэль (50%)! ${winningDesc}`;
           }
         }
         if (activeSpell.debuff && activeSpell.counterOutcome !== 'counter') {
@@ -1852,6 +1854,16 @@ export function tick(previous: Game, dt = 0.05): Game {
     if (alive.length === 1) {
       g.troops = g.troops.filter((p) => p.team === alive[0]);
       g.result = alive[0];
+    }
+  }
+  for (const tm of TEAM_IDS) {
+    if (
+      !g.towers.some((t) => t.team === tm && t.ruinedAt === undefined) &&
+      !g.troops.some((p) => p.team === tm)
+    ) {
+      g.wallets[tm].gold = 0;
+      g.wallets[tm].resources = 0;
+      g.wallets[tm].earned = 0;
     }
   }
   if (g.elapsed >= DURATION && !g.result)
@@ -1998,6 +2010,9 @@ export function applyDecree(
           next.troops = next.troops.filter((p) => p.team !== tm);
           next.routes = next.routes.filter((r) => r.team !== tm);
           next.automation = next.automation.filter((a) => a.team !== tm);
+          next.wallets[tm].gold = 0;
+          next.wallets[tm].resources = 0;
+          next.wallets[tm].earned = 0;
         }
       }
       if (a.kind === 'nuke' || a.kind === 'orbital' || a.kind === 'explode') {
@@ -2184,12 +2199,16 @@ export function applyDecree(
       }
       log.push(`Статус «${labelText}» присвоен`);
     } else if (a.kind === 'gold' || a.kind === 'resources') {
-      for (const who of affected)
+      for (const who of affected) {
         next.wallets[who][a.kind] = Math.max(
           0,
           Math.min(1e9, next.wallets[who][a.kind] + a.amount),
         );
-      log.push(`${a.kind === 'gold' ? 'Золото' : 'Древесина'}: +${a.amount}`);
+        if (a.amount > 0) {
+          next.wallets[who].earned = Math.min(1e9, next.wallets[who].earned + a.amount);
+        }
+      }
+      log.push(`${a.kind === 'gold' ? 'Золото' : 'Древесина'}: ${a.amount > 0 ? '+' : ''}${a.amount}`);
     } else if (a.kind === 'time') {
       next.elapsed = Math.max(0, DURATION - a.amount);
       log.push(`До конца матча ${a.amount} с`);
@@ -2533,12 +2552,16 @@ export function forceApplyDecreeWithLog(
       }
       log.push(`Статус «${labelText}» присвоен`);
     } else if (a.kind === 'gold' || a.kind === 'resources') {
-      for (const who of affected)
+      for (const who of affected) {
         next.wallets[who][a.kind] = Math.max(
           0,
           Math.min(1e9, next.wallets[who][a.kind] + a.amount),
         );
-      log.push(`${a.kind === 'gold' ? 'Золото' : 'Древесина'}: +${a.amount}`);
+        if (a.amount > 0) {
+          next.wallets[who].earned = Math.min(1e9, next.wallets[who].earned + a.amount);
+        }
+      }
+      log.push(`${a.kind === 'gold' ? 'Золото' : 'Древесина'}: ${a.amount > 0 ? '+' : ''}${a.amount}`);
     } else if (a.kind === 'time') {
       next.elapsed = Math.max(0, DURATION - a.amount);
       log.push(`Остаток матча изменён`);

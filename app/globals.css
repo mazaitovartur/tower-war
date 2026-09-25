@@ -4527,13 +4527,16 @@ button.tower:focus-visible,
 
 .roulette-counter-pill {
   display: block;
-  background: rgba(147, 51, 234, 0.25);
-  border: 1px solid rgba(192, 132, 252, 0.5);
-  color: #f3e8ff;
-  padding: 4px 8px;
-  border-radius: 6px;
-  font-size: 11px;
-  word-break: break-word;
+  background: linear-gradient(135deg, #3b0764 0%, #581c87 100%) !important;
+  border: 1.5px solid #a855f7 !important;
+  color: #ffffff !important;
+  padding: 6px 10px !important;
+  border-radius: 8px !important;
+  font-size: 12px !important;
+  font-weight: 750 !important;
+  line-height: 1.4 !important;
+  word-break: break-word !important;
+  box-shadow: 0 2px 8px rgba(59, 7, 100, 0.35) !important;
 }
 
 .roulette-outcome-badge.counter-win {

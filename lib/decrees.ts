@@ -563,10 +563,10 @@ export function localDecree(prompt: string, casterName = 'Командир'): De
     };
   }
   if (/сожги|выжги|в\s+пепел|в\s+угли|испепел|дотла/.test(text)) {
-    return { kind: 'burn', target, amount: 1 };
+    return { kind: 'burn', target: target === 'all' ? 'enemies' : target, amount: 1 };
   }
-  if (/взорви|подорви|взрыв\b|взорвать/.test(text)) {
-    return { kind: 'burn', target, amount: 1 };
+  if (/взорви|подорви|взрыв\b|взорвать|бомб/.test(text)) {
+    return { kind: 'explode', target: target === 'all' ? 'enemies' : target, amount: 35 };
   }
   if (/молни|гром|зевс|грозов/.test(text)) {
     return {
@@ -716,7 +716,7 @@ export function localDecree(prompt: string, casterName = 'Командир'): De
     )
   )
     p = { kind: 'transfer', target: target === 'all' ? 'enemies' : target, amount: 1 };
-  else if (/уничтож|убей|сотри|убери|ликвидируй|снеси|взорви|разруш|казни|смерть|взорвать|бомб|подорви|сожги|испепел|выжги/.test(text))
+  else if (/уничтож|убей|сотри|убери|ликвидируй|снеси|разруш|казни|смерть|сожги|испепел|выжги/.test(text))
     p = { kind: 'destroy', target: target === 'all' ? 'enemies' : target, amount: 1 };
   else if (/замороз|останов|стан|обездвиж|лед\b|льдом|холод|паралич|тормоз/.test(text))
     p = { kind: 'freeze', target: target === 'all' ? 'enemies' : target, amount: amount ?? 30 };
@@ -824,9 +824,9 @@ export function describeTarget(target: Target): string {
 
 export function describeAction(a: Action): string {
   switch (a.kind) {
-    case 'burn': return '🔥 Сожжение дотла в тлеющие угли';
+    case 'burn': return '🔥 Сожжение дотла в пепел';
     case 'nuke': return '☢️ Ядерный удар с сотрясением';
-    case 'explode': return '💥 Мощный подрыв позиций';
+    case 'explode': return '💥 Взрыв укреплений';
     case 'orbital': return '🛰️ Орбитальный лазерный залп';
     case 'destroy': return '💣 Уничтожение укреплений';
     case 'transfer': return '🚩 Переход под контроль игрока';
