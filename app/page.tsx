@@ -3476,10 +3476,10 @@ export default function Home() {
             </div>
           )}
           {(() => {
-            const isAntiMode = !!(game.spell && game.spell.team !== myTeam && !game.result);
+            const isAntiMode = !!(game.spell && game.spell.team !== myTeam && !game.result && !counterSubmitted);
             const isLeaderTurn = !developing && game.authority === 'you' && !game.result;
             const antiSecondsLeft = isAntiMode
-              ? Math.max(0, Math.ceil((game.spell!.castAt ?? (game.spell!.startedAt + 10)) - game.age))
+              ? Math.max(0, Math.ceil((game.spell!.castAt ?? (game.spell!.startedAt + 15)) - game.age))
               : 0;
 
             return (
@@ -3528,46 +3528,40 @@ export default function Home() {
                 </div>
 
                 {isAntiMode ? (
-                  !counterSubmitted ? (
-                    <form onSubmit={submitCounterPrompt}>
-                      <div className="wish-input">
-                        <textarea
-                          id="counter-wish"
-                          value={counterDraft}
-                          onChange={(e) => setCounterDraft(e.target.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter' && !e.shiftKey) {
-                              e.preventDefault();
-                              if (counterDraft.trim()) {
-                                submitCounterPrompt(e);
-                              }
+                  <form onSubmit={submitCounterPrompt}>
+                    <div className="wish-input">
+                      <textarea
+                        id="counter-wish"
+                        value={counterDraft}
+                        onChange={(e) => setCounterDraft(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' && !e.shiftKey) {
+                            e.preventDefault();
+                            if (counterDraft.trim()) {
+                              submitCounterPrompt(e);
                             }
-                          }}
-                          maxLength={350}
-                          rows={2}
-                          placeholder="Введите анти-приказ…"
-                          autoFocus
-                        />
-                        <button
-                          type="submit"
-                          disabled={!counterDraft.trim()}
-                          className="counter-submit-btn"
-                        >
-                          ⚔️ Парировать
-                        </button>
-                      </div>
-                      <div className="wish-meta">
-                        <span>Дуэль приказов · Рулетка определит победителя 50/50</span>
-                        <span className={`typing-clock ${antiSecondsLeft <= 3 ? 'urgent' : ''}`}>
-                          {antiSecondsLeft} с на ввод · {counterDraft.length}/350
-                        </span>
-                      </div>
-                    </form>
-                  ) : (
-                    <div className="counter-submitted-badge">
-                      ✓ Ваш анти-приказ {cleanPromptText(counterDraft)} принят! Рулетка решит исход дуэли (50% / 50%)…
+                          }
+                        }}
+                        maxLength={350}
+                        rows={2}
+                        placeholder="Введите анти-приказ…"
+                        autoFocus
+                      />
+                      <button
+                        type="submit"
+                        disabled={!counterDraft.trim()}
+                        className="counter-submit-btn"
+                      >
+                        ⚔️ Парировать
+                      </button>
                     </div>
-                  )
+                    <div className="wish-meta">
+                      <span>Дуэль приказов · Рулетка определит победителя 50/50</span>
+                      <span className={`typing-clock ${antiSecondsLeft <= 3 ? 'urgent' : ''}`}>
+                        {antiSecondsLeft} с на ввод · {counterDraft.length}/350
+                      </span>
+                    </div>
+                  </form>
                 ) : isLeaderTurn ? (
                   <form onSubmit={submitPrompt}>
                     <label htmlFor="wish">

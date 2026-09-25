@@ -955,7 +955,7 @@ export function startSpell(
       epoch: g.authorityEpoch,
       prompt: prompt.slice(0, 350),
       startedAt: g.age,
-      castAt: g.age + 10,
+      castAt: g.age + 15,
       roll,
     },
   };
@@ -1017,11 +1017,11 @@ export function readySpell(
       roll,
       counterPatch: counterPatch && validDecree(counterPatch) ? counterPatch : undefined,
       counterOutcome,
-      castAt: Math.max(g.spell.castAt ?? 0, g.age + 10),
+      castAt: Math.max(g.spell.castAt ?? 0, g.age + 15),
     },
     notice: debuff
       ? `${debuff.title}: ${debuff.description}`
-      : 'Приказ готовится · окно анти-приказа 10 с',
+      : 'Приказ готовится · окно анти-приказа 15 с',
   };
 }
 export function sendScout(
@@ -1986,7 +1986,7 @@ export function tick(previous: Game, dt = 0.05): Game {
           nextG.notice += ` Побочный эффект: ${activeSpell.debuff.title}.`;
         }
         g = nextG;
-      } else if (!activeSpell.patch && g.age - activeSpell.startedAt > 15) {
+      } else if (!activeSpell.patch && g.age - activeSpell.startedAt > 20) {
         g.spell = undefined;
         g.notice = 'Время ожидания приказа истекло';
       }
