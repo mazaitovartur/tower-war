@@ -1104,6 +1104,196 @@ export function refreshAuthority(g: Game): Game {
         leaderSince: g.age,
       };
 }
+export function generateContextualBotCounter(
+  leaderPrompt: string,
+  botTeam: Team,
+  leaderTeam: Team,
+): { prompt: string; patch: Decree } {
+  const p = (leaderPrompt || '').toLowerCase();
+
+  // 1. Gold / Wealth / Money / Resources / Economy
+  if (/золот|монет|казн|миллион|деньг|богат|ресурс|дерев|лес|доход|налог|банк|мани|кэш|бабло|шахт/.test(p)) {
+    const options: { prompt: string; patch: Decree }[] = [
+      {
+        prompt: 'Ограбление казны: мятежники перехватили золото и опустошили хранилища!',
+        patch: {
+          kind: 'batch',
+          actions: [
+            { kind: 'gold', target: leaderTeam, amount: -350 },
+            { kind: 'gold', target: botTeam, amount: 250 },
+          ],
+        },
+      },
+      {
+        prompt: 'Таможенная блокада: конфискация всех ресурсов и золота у лидеров!',
+        patch: {
+          kind: 'batch',
+          actions: [
+            { kind: 'gold', target: leaderTeam, amount: -400 },
+            { kind: 'resources', target: leaderTeam, amount: -300 },
+          ],
+        },
+      },
+      {
+        prompt: 'Черный бунт: крестьяне сожгли склады сырья и разграбили казну!',
+        patch: { kind: 'gold', target: leaderTeam, amount: -500 },
+      },
+      {
+        prompt: 'Экономический дефолт: обесценивание запасов соперника!',
+        patch: {
+          kind: 'batch',
+          actions: [
+            { kind: 'gold', target: leaderTeam, amount: -300 },
+            { kind: 'resources', target: botTeam, amount: 200 },
+          ],
+        },
+      },
+    ];
+    return options[Math.floor(Math.random() * options.length)];
+  }
+
+  // 2. Army / Troops / Units / Reinforce / Numbers
+  if (/войск|арми|солдат|юнит|бойц|подкрепл|людей|гарнизон|отряд|рекрут|\+\d+|\d+\s*бойц/.test(p)) {
+    const options: { prompt: string; patch: Decree }[] = [
+      {
+        prompt: 'Чума в казармах: эпидемия выкосила половину личного состава!',
+        patch: { kind: 'reinforce', target: leaderTeam, amount: -40 },
+      },
+      {
+        prompt: 'Ночная засада: дезертирство и разгром передовых отрядов лидера!',
+        patch: { kind: 'reinforce', target: leaderTeam, amount: -50 },
+      },
+      {
+        prompt: 'Бунт наемников: штурмовики переметнулись на сторону соперников!',
+        patch: {
+          kind: 'batch',
+          actions: [
+            { kind: 'reinforce', target: leaderTeam, amount: -30 },
+            { kind: 'reinforce', target: botTeam, amount: 35 },
+          ],
+        },
+      },
+      {
+        prompt: 'Гнилое снабжение: войско лидера потеряло боевой дух (-50% численности)!',
+        patch: { kind: 'multiply', target: leaderTeam, amount: 0.5 },
+      },
+    ];
+    return options[Math.floor(Math.random() * options.length)];
+  }
+
+  // 3. Captures / Towers / Bases
+  if (/башн|здан|захват|отбер|все базы|забери|переда|отожми|крепост|форт|цитадел|лесопил/.test(p)) {
+    const options: { prompt: string; patch: Decree }[] = [
+      {
+        prompt: 'Минирование фортов: фугасные ловушки подрывают захватчиков!',
+        patch: { kind: 'explode', target: leaderTeam, amount: 45 },
+      },
+      {
+        prompt: 'Неприступная крепость: монолитная броня и щит на все наши башни!',
+        patch: { kind: 'shield', target: botTeam, amount: 15 },
+      },
+      {
+        prompt: 'Контр-экспроприация: укрепление форпостов до максимального уровня!',
+        patch: { kind: 'upgrade', target: botTeam, amount: 3 },
+      },
+      {
+        prompt: 'Круговая оборона: мобилизация +35 защитников в ключевые узлы!',
+        patch: { kind: 'reinforce', target: botTeam, amount: 35 },
+      },
+    ];
+    return options[Math.floor(Math.random() * options.length)];
+  }
+
+  // 4. Speed / Rush / Acceleration / March
+  if (/скорост|ускор|быстр|марш|турбо|бег|раш|молни/.test(p)) {
+    const options: { prompt: string; patch: Decree }[] = [
+      {
+        prompt: 'Трясина и топи: болотная жижа замедляет марш противника в 4 раза!',
+        patch: { kind: 'speed', target: leaderTeam, amount: 0.25 },
+      },
+      {
+        prompt: 'Ледяной капкан: армада соперника намертво скована льдом на 12 с!',
+        patch: { kind: 'freeze', target: leaderTeam, amount: 12 },
+      },
+      {
+        prompt: 'Снежная буря: войска лидера сбились с пути и замерзают!',
+        patch: { kind: 'blizzard', target: leaderTeam, amount: 12 },
+      },
+    ];
+    return options[Math.floor(Math.random() * options.length)];
+  }
+
+  // 5. Explosion / Burn / Nuke / Destroy
+  if (/взорв|подорв|сожг|пепел|уничтож|бомб|стереть|ядр|убей|в прах|взрыв|снаряд|разори/.test(p)) {
+    const options: { prompt: string; patch: Decree }[] = [
+      {
+        prompt: 'Зеркальный барьер: взрывная волна отражена обратно в укрепления лидера!',
+        patch: { kind: 'explode', target: leaderTeam, amount: 45 },
+      },
+      {
+        prompt: 'Бункер цитадели: титановый купол поглощает любую детонацию на 12 с!',
+        patch: { kind: 'shield', target: 'all', amount: 12 },
+      },
+      {
+        prompt: 'Полевой ремонт: инженеры мгновенно восстанавливают руины из пепла!',
+        patch: { kind: 'repair', target: botTeam, amount: 40 },
+      },
+    ];
+    return options[Math.floor(Math.random() * options.length)];
+  }
+
+  // 6. Shield / Defense / Freeze / Invulnerable
+  if (/щит|купол|защит|неуязвим|замороз|лед|стан/.test(p)) {
+    const options: { prompt: string; patch: Decree }[] = [
+      {
+        prompt: 'Осадные тараны: бронебойные орудия сокрушают любые магические барьеры!',
+        patch: { kind: 'explode', target: leaderTeam, amount: 40 },
+      },
+      {
+        prompt: 'Огненный шквал: пламя плавит лед и обращает оборону лидера в бегство!',
+        patch: { kind: 'speed', target: botTeam, amount: 1.8 },
+      },
+    ];
+    return options[Math.floor(Math.random() * options.length)];
+  }
+
+  // 7. Taunts / Boast / Humiliation / God mode
+  if (/батя|царь|бог|выеб|обосс|соса|лох|нуб|соси|унизь|раб|хозяин|пососи/.test(p)) {
+    const options: { prompt: string; patch: Decree }[] = [
+      {
+        prompt: 'Восстание угнетенных: спесь правителя сбита, гарнизоны бунтуют (-45 бойцов)!',
+        patch: { kind: 'reinforce', target: leaderTeam, amount: -45 },
+      },
+      {
+        prompt: 'Свержение тирана: мятежные офицеры разграбили и взорвали арсенал!',
+        patch: { kind: 'explode', target: leaderTeam, amount: 50 },
+      },
+    ];
+    return options[Math.floor(Math.random() * options.length)];
+  }
+
+  // 8. General fallback
+  const fallbackOptions: { prompt: string; patch: Decree }[] = [
+    {
+      prompt: 'Контрудар: перегрузка орудий и удар по тылам противника!',
+      patch: { kind: 'explode', target: leaderTeam, amount: 35 },
+    },
+    {
+      prompt: 'Штабной резерв: призыв +35 элитных защитников в гарнизоны!',
+      patch: { kind: 'reinforce', target: 'main', amount: 35 },
+    },
+    {
+      prompt: 'Диверсия: авангард лидера заморожен на 10 с!',
+      patch: { kind: 'freeze', target: leaderTeam, amount: 10 },
+    },
+    {
+      prompt: 'Зеркальная брешь: перехват 160 золота и ресурсов!',
+      patch: { kind: 'gold', target: botTeam, amount: 160 },
+    },
+  ];
+  return fallbackOptions[Math.floor(Math.random() * fallbackOptions.length)];
+}
+
 export function tick(previous: Game, dt = 0.05): Game {
   if (previous.result) return previous;
   let g: Game = {
@@ -1732,33 +1922,7 @@ export function tick(previous: Game, dt = 0.05): Game {
       );
       if (eligibleBots.length > 0) {
         const botTeam = eligibleBots[Math.floor(Math.random() * eligibleBots.length)];
-        const botCounterOptions = [
-          {
-            prompt: 'Контрудар: перегрузка и подрыв вражеских орудий!',
-            patch: { kind: 'explode' as const, target: 'enemies' as const, amount: 30 },
-          },
-          {
-            prompt: 'Магический щит: защитный купол цитадели на 10 с!',
-            patch: { kind: 'shield' as const, target: 'all' as const, amount: 10 },
-          },
-          {
-            prompt: 'Диверсия: авангард лидера заморожен на 12 с!',
-            patch: { kind: 'freeze' as const, target: 'enemies' as const, amount: 12 },
-          },
-          {
-            prompt: 'Зеркальная брешь: перехват 150 золота и ресурсов!',
-            patch: { kind: 'gold' as const, target: botTeam, amount: 150 },
-          },
-          {
-            prompt: 'Штабной резерв: призыв +35 элитных защитников!',
-            patch: { kind: 'reinforce' as const, target: 'main' as const, amount: 35 },
-          },
-          {
-            prompt: 'Марш возмездия: ускорение армий соперников ×1.8!',
-            patch: { kind: 'speed' as const, target: 'all' as const, amount: 1.8 },
-          },
-        ];
-        const pick = botCounterOptions[Math.floor(Math.random() * botCounterOptions.length)];
+        const pick = generateContextualBotCounter(spell.prompt, botTeam, spell.team);
         const botOutcome = Math.random() < 0.5 ? 'counter' : 'leader';
         g = submitCounterSpell(g, botTeam, pick.prompt, pick.patch, botOutcome);
       }

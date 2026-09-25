@@ -1735,8 +1735,9 @@ export default function Home() {
           ).join(', ')}
         >
           {activeTeams.map((t) => {
-            const points = Math.floor(game.wallets[t]?.earned ?? 0);
-            const pct = totalEarned ? (points / totalEarned) * 100 : (100 / (activeTeams.length || 1));
+            const rawEarned = game.wallets[t]?.earned ?? 0;
+            const points = Math.floor(rawEarned);
+            const pct = totalEarned > 0 ? (rawEarned / totalEarned) * 100 : (100 / (activeTeams.length || 1));
             return (
               <span
                 key={t}
@@ -3259,16 +3260,10 @@ export default function Home() {
               <span>{timeLeft} с</span>
             </div>
             <div className="duel-result-winner" style={{ color: TEAMS[winnerTeam].color }}>
-              {isCounterWinner ? '🏆 ПОБЕДИЛ АНТИ-ПРИКАЗ:' : '🏆 ПОБЕДИЛА ВОЛЯ ЛИДЕРА:'}{' '}
-              {playerName(game, winnerTeam)}
+              <span>🏆 {playerName(game, winnerTeam)}</span>
             </div>
             <div className="duel-result-effect">
-              Вступил в силу: <b>{game.lastDuel.winningText}</b>
-            </div>
-            <div className="duel-result-sub">
-              {isCounterWinner
-                ? `Приказ лидера («${game.lastDuel.leaderPrompt}») парирован и отменён!`
-                : `Анти-приказ («${game.lastDuel.counterPrompt}») отклонён рулеткой.`}
+              <b>{game.lastDuel.winningText}</b>
             </div>
           </div>
         );

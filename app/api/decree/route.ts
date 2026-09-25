@@ -126,18 +126,6 @@ export async function POST(request: Request) {
     }
   }
 
-  // If there is NO counter-prompt and we matched a clear fast local template, apply immediately
-  if (!counterPrompt && local && validDecree(local)) {
-    return Response.json({
-      patch: local,
-      counterPatch: null,
-      counterOutcome,
-      provider: 'local',
-      roll: 'disabled',
-      debuff: null,
-    });
-  }
-
   // Filter out pure informational questions or chat statements without action
   const isQuestionOrChatOnly =
     /(?:^|\s)(?:приказы\s+уже|доступны\s+ли|когда\s+приказ|как\s+играть|что\s+делать|кто\s+(?:лидер|побежда|ведет)|привет\b|ку\b|хай\b|хеллоу|почему\s+не|зачем\b|что\s+это|как\s+дела)(?:\s|\?|$|[.!?])/i.test(
