@@ -3169,6 +3169,7 @@ export default function Home() {
       })()}
       {game.spell && (() => {
         const isCountdownActive = (game.spell.castAt ?? 0) > game.age;
+        const isRoulette = game.spell.phase === 'roulette';
         const candidates = game.spell.counterCandidates && game.spell.counterCandidates.length > 0
           ? game.spell.counterCandidates
           : game.spell.counterPrompt
@@ -3177,7 +3178,9 @@ export default function Home() {
         const hasCounter = candidates.length > 0;
         const timeLeft = Math.max(0, Math.ceil((game.spell.castAt ?? game.age) - game.age));
         const primaryCandidate = candidates[0];
-        const counterTeam = primaryCandidate ? primaryCandidate.team : (game.spell.counterTeam ?? 'red');
+        const counterTeam = isRoulette
+          ? (game.spell.counterTeam ?? primaryCandidate?.team ?? 'red')
+          : (primaryCandidate ? primaryCandidate.team : (game.spell.counterTeam ?? 'red'));
         const counterAuthor = playerName(game, counterTeam);
 
         return (
@@ -3193,9 +3196,9 @@ export default function Home() {
           >
             <div className="roulette-disc-wrap">
               <div
-                className={`roulette-disc ${hasCounter ? 'spinning' : 'pure'}`}
+                className={`roulette-disc ${isRoulette ? 'spinning' : 'pure'}`}
               >
-                {hasCounter ? '🎲' : game.spell.patch ? '👑' : '📜'}
+                {isRoulette ? '🎲' : hasCounter ? '⚔️' : game.spell.patch ? '👑' : '📜'}
               </div>
             </div>
             <div
@@ -3211,9 +3214,11 @@ export default function Home() {
               <div className="roulette-top-badge">
                 <Sparkles size={13} className="roulette-sparkle" />
                 <span>
-                  {hasCounter
-                    ? '⚔️ ДУЭЛЬ АНТИПРИКАЗОВ'
-                    : 'БОЕВОЙ ПРИКАЗ ЛИДЕРА'}
+                  {isRoulette
+                    ? '⚔️ ДУЭЛЬ АНТИПРИКАЗОВ (РУЛЕТКА)'
+                    : hasCounter
+                      ? '⚔️ СБОР ВЫЗОВОВ (15 СЕК)'
+                      : 'БОЕВОЙ ПРИКАЗ ЛИДЕРА'}
                 </span>
               </div>
               <div
@@ -3228,7 +3233,11 @@ export default function Home() {
                   minWidth: 0,
                 }}
               >
-                {hasCounter ? (
+                {isRoulette ? (
+                  <span className="roulette-caster" style={{ color: TEAMS[counterTeam].color, fontWeight: 800 }}>
+                    ⚔️ {counterAuthor} vs 👑 {playerName(game, game.spell.team)}
+                  </span>
+                ) : hasCounter ? (
                   <span className="roulette-caster" style={{ color: candidates.length > 1 ? '#f59e0b' : TEAMS[counterTeam].color, fontWeight: 800 }}>
                     {candidates.length > 1 ? `⚔️ Вызовы (${candidates.length})` : `⚔️ ${counterAuthor}`}
                   </span>
@@ -3239,7 +3248,7 @@ export default function Home() {
                 )}
                 <span
                   className={`roulette-outcome-badge ${
-                    hasCounter
+                    isRoulette
                       ? 'spinning'
                       : 'pure'
                   }`}
@@ -3249,23 +3258,33 @@ export default function Home() {
                     maxWidth: '100%',
                   }}
                 >
-                  {hasCounter
+                  {isRoulette
                     ? `🎲 Рулетка вращается… (${timeLeft} с)`
-                    : game.spell.patch
-                      ? `✓ Приказ утверждён (${timeLeft} с)`
-                      : 'Подготовка приказа…'}
+                    : hasCounter
+                      ? `⏳ Окно ввода (${timeLeft} с) · Вызовов: ${candidates.length}`
+                      : game.spell.patch
+                        ? `✓ Приказ утверждён · окно вызова (${timeLeft} с)`
+                        : 'Подготовка приказа…'}
                 </span>
               </div>
               {hasCounter && (
                 <div className="roulette-counter-duel-row" style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                  {candidates.length > 1 && (
+                  {isRoulette ? (
                     <div style={{ fontSize: '11px', fontWeight: 700, color: '#f59e0b', padding: '1px 2px' }}>
-                      🎲 Поступило {candidates.length} анти-приказа · рулетка выберет один (50% против Лидера):
+                      🎲 Выбран вызов против Лидера (50% шанс победы · рулетка 6 с):
+                    </div>
+                  ) : candidates.length > 1 ? (
+                    <div style={{ fontSize: '11px', fontWeight: 700, color: '#f59e0b', padding: '1px 2px' }}>
+                      🎲 В очереди {candidates.length} анти-приказа · после 15 с рулетка выберет 1 и будет крутиться 6 с:
+                    </div>
+                  ) : (
+                    <div style={{ fontSize: '11px', fontWeight: 700, color: '#38bdf8', padding: '1px 2px' }}>
+                      ⚔️ Вызов принят · рулетка начнётся после окна ввода (через {timeLeft} с):
                     </div>
                   )}
-                  {candidates.map((cand, idx) => (
+                  {(isRoulette ? candidates.filter(c => c.team === counterTeam).slice(0, 1) : candidates).map((cand, idx) => (
                     <div key={cand.team + idx} style={{ width: '100%' }}>
-                      {candidates.length > 1 && (
+                      {(!isRoulette && candidates.length > 1) && (
                         <div style={{ color: TEAMS[cand.team].color, fontWeight: 800, fontSize: '11px', marginBottom: '2px' }}>
                           ⚔️ {playerName(game, cand.team)}
                         </div>
@@ -3503,10 +3522,16 @@ export default function Home() {
             </div>
           )}
           {(() => {
-            const isAntiMode = !!(game.spell && game.spell.team !== myTeam && !game.result && !counterSubmitted);
+            const isAntiMode = !!(
+              game.spell &&
+              game.spell.team !== myTeam &&
+              !game.result &&
+              !counterSubmitted &&
+              (game.spell.phase ?? 'entry') === 'entry'
+            );
             const isLeaderTurn = !developing && game.authority === 'you' && !game.result;
             const antiSecondsLeft = isAntiMode
-              ? Math.max(0, Math.ceil((game.spell!.castAt ?? (game.spell!.startedAt + 15)) - game.age))
+              ? Math.max(0, Math.ceil((game.spell!.entryUntil ?? (game.spell!.startedAt + 15)) - game.age))
               : 0;
 
             const cooldownEnd = game.decreeCooldownUntil?.[myTeam] ?? 0;

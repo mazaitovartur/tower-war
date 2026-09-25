@@ -96,6 +96,8 @@ export type Spell = {
   prompt: string;
   startedAt: number;
   castAt?: number;
+  entryUntil?: number;
+  phase?: 'entry' | 'roulette';
   patch?: Decree;
   debuff?: Debuff | null;
   roll?: string;
@@ -974,7 +976,9 @@ export function startSpell(
       epoch: g.authorityEpoch,
       prompt: prompt.slice(0, 350),
       startedAt: g.age,
+      entryUntil: g.age + 15,
       castAt: g.age + 15,
+      phase: 'entry',
       roll,
       counterCandidates: [],
     },
@@ -1008,21 +1012,18 @@ export function submitCounterSpell(
   ];
 
   const primary = nextCandidates[0];
-  const isFirstCounter = !g.spell.counterPrompt && (!g.spell.counterCandidates || g.spell.counterCandidates.length === 0);
-  const duelCastAt = isFirstCounter ? g.age + 6 : (g.spell.castAt ? Math.min(g.spell.castAt, g.age + 6) : g.age + 6);
 
   return {
     ...g,
     spell: {
       ...g.spell,
-      castAt: duelCastAt,
       counterCandidates: nextCandidates,
       counterTeam: primary.team,
       counterPrompt: primary.prompt,
       counterPatch: (counterPatch && validDecree(counterPatch)) ? counterPatch : g.spell.counterPatch,
       counterOutcome: outcome,
     },
-    notice: `⚔️ ${casterName} выдвинул АНТИ-ПРИКАЗ: ${cleanPrompt.slice(0, 45)}! Рулетка 50/50…`,
+    notice: `⚔️ ${casterName} выдвинул анти-приказ (${nextCandidates.length} в очереди). Окно анти-приказа открыто!`,
   };
 }
 
@@ -1044,6 +1045,8 @@ export function readySpell(
     (debuff !== null && !validDebuff(debuff))
   )
     return g;
+  const isRoulette = g.spell.phase === 'roulette';
+  const entryUntil = g.spell.entryUntil ?? (g.spell.startedAt + 15);
   return {
     ...g,
     spell: {
@@ -1053,7 +1056,8 @@ export function readySpell(
       roll,
       counterPatch: counterPatch && validDecree(counterPatch) ? counterPatch : undefined,
       counterOutcome,
-      castAt: Math.max(g.spell.castAt ?? 0, g.age + 15),
+      entryUntil,
+      castAt: isRoulette ? g.spell.castAt : entryUntil,
     },
     notice: debuff
       ? `${debuff.title}: ${debuff.description}`
@@ -1948,9 +1952,8 @@ export function tick(previous: Game, dt = 0.05): Game {
     // In games with bots: rival bots challenge with an anti-decree with 33% probability each!
     if (
       !spell.botChallengeEvaluated &&
-      g.age - spell.startedAt >= 1.5 &&
-      spell.castAt !== undefined &&
-      spell.castAt - g.age >= 1.5
+      (spell.phase ?? 'entry') === 'entry' &&
+      g.age - spell.startedAt >= 2.0
     ) {
       spell.botChallengeEvaluated = true;
       const eligibleBots: Team[] = (['red', 'purple', 'green'] as Team[]).filter(
@@ -1966,74 +1969,101 @@ export function tick(previous: Game, dt = 0.05): Game {
 
     if (g.spell) {
       const activeSpell = g.spell;
-      const hasRouletteStarted = !!(
-        activeSpell.counterPrompt ||
-        (activeSpell.counterCandidates && activeSpell.counterCandidates.length > 0)
-      );
-      if (!hasRouletteStarted && (g.authority !== activeSpell.team || g.authorityEpoch !== activeSpell.epoch)) {
-        g.spell = undefined;
-        g.notice = 'Лидер сменился — заклинание сорвано!';
-      } else if (
-        activeSpell.castAt !== undefined &&
-        g.age >= activeSpell.castAt &&
-        activeSpell.patch
-      ) {
-        // If multiple anti-decrees were submitted, randomly pick ONE of them!
+      const entryUntil = activeSpell.entryUntil ?? (activeSpell.startedAt + 15);
+      const isEntry = (activeSpell.phase ?? 'entry') === 'entry';
+
+      // 1. If 15s entry window expired:
+      if (isEntry && g.age >= entryUntil) {
         const candidates = activeSpell.counterCandidates ?? [];
         if (candidates.length > 0) {
+          // Candidates submitted! Transition to roulette phase: spins for exactly 6 seconds!
           const chosen = candidates[Math.floor(Math.random() * candidates.length)];
+          activeSpell.phase = 'roulette';
           activeSpell.counterTeam = chosen.team;
           activeSpell.counterPrompt = chosen.prompt;
           if (chosen.patch && validDecree(chosen.patch)) {
             activeSpell.counterPatch = chosen.patch;
           }
-        }
-
-        const isCounterWinner = activeSpell.counterOutcome === 'counter' && !!activeSpell.counterPatch;
-        const effectivePatch: Decree = isCounterWinner && activeSpell.counterPatch ? activeSpell.counterPatch : activeSpell.patch;
-        const effectiveTeam: Team = isCounterWinner && activeSpell.counterTeam ? activeSpell.counterTeam : activeSpell.team;
-
-        let nextG = forceApplyDecree(
-          { ...g, spell: undefined },
-          effectiveTeam,
-          effectivePatch,
-        );
-        if (activeSpell.counterPrompt) {
-          const rawPrompt = isCounterWinner ? activeSpell.counterPrompt : activeSpell.prompt;
-          const patchDesc = describeDecree(effectivePatch)[0];
-          const winningDesc = (rawPrompt || patchDesc).replace(/^[«"'\s]+|[»"'\s]+$/g, '').trim();
-          const winnerTeam = effectiveTeam;
-          const loserTeam = isCounterWinner ? activeSpell.team : (activeSpell.counterTeam ?? 'red');
-          const winnerName = playerName(nextG, winnerTeam);
-
-          nextG.lastDuel = {
-            winner: isCounterWinner ? 'counter' : 'leader',
-            winnerTeam,
-            loserTeam,
-            leaderPrompt: activeSpell.prompt,
-            counterPrompt: activeSpell.counterPrompt,
-            winningText: winningDesc,
-            at: nextG.age,
-            until: nextG.age + 6,
-          };
-
-          if (isCounterWinner) {
-            nextG.notice = `⚔️ Анти-приказ (${winnerName}) победил в рулетке (50%)! ${winningDesc}`;
-          } else {
-            nextG.notice = `👑 Воля Лидера (${winnerName}) победила дуэль (50%)! ${winningDesc}`;
+          activeSpell.castAt = g.age + 6;
+          g.notice = `🎲 Начинается рулетка дуэли: ${playerName(g, activeSpell.team)} против ${playerName(g, chosen.team)}! Вращение 6 с…`;
+        } else if (activeSpell.patch) {
+          // No challengers during the 15s window: leader's decree executes directly!
+          let nextG = forceApplyDecree(
+            { ...g, spell: undefined },
+            activeSpell.team,
+            activeSpell.patch,
+          );
+          if (activeSpell.debuff) {
+            nextG.curses = [
+              ...(nextG.curses ?? []),
+              { team: activeSpell.team, debuff: activeSpell.debuff, at: nextG.age },
+            ];
+            nextG.notice += ` Побочный эффект: ${activeSpell.debuff.title}.`;
           }
+          g = nextG;
         }
-        if (activeSpell.debuff && activeSpell.counterOutcome !== 'counter') {
-          nextG.curses = [
-            ...(nextG.curses ?? []),
-            { team: activeSpell.team, debuff: activeSpell.debuff, at: nextG.age },
-          ];
-          nextG.notice += ` Побочный эффект: ${activeSpell.debuff.title}.`;
+      }
+
+      // 2. Disruption check & Roulette resolution
+      if (g.spell) {
+        const isRoulettePhase = g.spell.phase === 'roulette';
+        // Leader changes CANNOT disrupt roulette phase!
+        if (!isRoulettePhase && (g.authority !== g.spell.team || g.authorityEpoch !== g.spell.epoch)) {
+          g.spell = undefined;
+          g.notice = 'Лидер сменился — заклинание сорвано!';
+        } else if (
+          isRoulettePhase &&
+          g.spell.castAt !== undefined &&
+          g.age >= g.spell.castAt &&
+          g.spell.patch
+        ) {
+          const finalSpell = g.spell;
+          const isCounterWinner = finalSpell.counterOutcome === 'counter' && !!finalSpell.counterPatch;
+          const effectivePatch: Decree = (isCounterWinner && finalSpell.counterPatch ? finalSpell.counterPatch : finalSpell.patch)!;
+          const effectiveTeam: Team = isCounterWinner && finalSpell.counterTeam ? finalSpell.counterTeam : finalSpell.team;
+
+          let nextG = forceApplyDecree(
+            { ...g, spell: undefined },
+            effectiveTeam,
+            effectivePatch,
+          );
+          if (finalSpell.counterPrompt) {
+            const rawPrompt = isCounterWinner ? finalSpell.counterPrompt : finalSpell.prompt;
+            const patchDesc = describeDecree(effectivePatch)[0];
+            const winningDesc = (rawPrompt || patchDesc).replace(/^[«"'\s]+|[»"'\s]+$/g, '').trim();
+            const winnerTeam = effectiveTeam;
+            const loserTeam = isCounterWinner ? finalSpell.team : (finalSpell.counterTeam ?? 'red');
+            const winnerName = playerName(nextG, winnerTeam);
+
+            nextG.lastDuel = {
+              winner: isCounterWinner ? 'counter' : 'leader',
+              winnerTeam,
+              loserTeam,
+              leaderPrompt: finalSpell.prompt,
+              counterPrompt: finalSpell.counterPrompt,
+              winningText: winningDesc,
+              at: nextG.age,
+              until: nextG.age + 6,
+            };
+
+            if (isCounterWinner) {
+              nextG.notice = `⚔️ Анти-приказ (${winnerName}) победил в рулетке (50%)! ${winningDesc}`;
+            } else {
+              nextG.notice = `👑 Воля Лидера (${winnerName}) победила дуэль (50%)! ${winningDesc}`;
+            }
+          }
+          if (finalSpell.debuff && finalSpell.counterOutcome !== 'counter') {
+            nextG.curses = [
+              ...(nextG.curses ?? []),
+              { team: finalSpell.team, debuff: finalSpell.debuff, at: nextG.age },
+            ];
+            nextG.notice += ` Побочный эффект: ${finalSpell.debuff.title}.`;
+          }
+          g = nextG;
+        } else if (!g.spell.patch && g.age - g.spell.startedAt > 25) {
+          g.spell = undefined;
+          g.notice = 'Время ожидания приказа истекло';
         }
-        g = nextG;
-      } else if (!activeSpell.patch && g.age - activeSpell.startedAt > 20) {
-        g.spell = undefined;
-        g.notice = 'Время ожидания приказа истекло';
       }
     }
   }
