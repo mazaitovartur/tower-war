@@ -1,5 +1,5 @@
 import { validDebuff, type Debuff } from './magic';
-import { validDecree, type Decree, type Target } from './decrees';
+import { validDecree, describeDecree, type Decree, type Target } from './decrees';
 export type Team = 'you' | 'red' | 'purple' | 'green';
 export type Kind =
   | 'tower'
@@ -107,8 +107,19 @@ export type MapEvent = {
   until: number;
   claimed?: Team;
 };
+export type DuelResult = {
+  winner: 'leader' | 'counter';
+  winnerTeam: Team;
+  loserTeam: Team;
+  leaderPrompt: string;
+  counterPrompt: string;
+  winningText: string;
+  at: number;
+  until: number;
+};
 export type Game = {
   humanTeams?: Team[];
+  lastDuel?: DuelResult;
   minesweeper?: { start: number; until: number; boards: { team: Team; finish: number; failed: boolean }[] };
   explosions?: { id: number; at: number }[];
   inputLocked?: Partial<Record<Team, boolean>>;
@@ -943,7 +954,7 @@ export function startSpell(
       epoch: g.authorityEpoch,
       prompt: prompt.slice(0, 350),
       startedAt: g.age,
-      castAt: g.age + 20,
+      castAt: g.age + 10,
       roll,
     },
   };
@@ -1005,11 +1016,11 @@ export function readySpell(
       roll,
       counterPatch: counterPatch && validDecree(counterPatch) ? counterPatch : undefined,
       counterOutcome,
-      castAt: Math.max(g.spell.castAt ?? 0, g.age + 20),
+      castAt: Math.max(g.spell.castAt ?? 0, g.age + 10),
     },
     notice: debuff
       ? `${debuff.title}: ${debuff.description}`
-      : 'Приказ готовится · окно анти-приказа 20 с',
+      : 'Приказ готовится · окно анти-приказа 10 с',
   };
 }
 export function sendScout(
@@ -1707,14 +1718,14 @@ export function tick(previous: Game, dt = 0.05): Game {
   if (g.spell) {
     const spell = g.spell;
     // In games with bots: if a human player is the leader and no counter has been submitted yet,
-    // a rival bot challenges with an anti-decree after 3.5 seconds!
+    // a rival bot challenges with an anti-decree after 1.5 seconds!
     const isHumanLeader = !g.humanTeams || g.humanTeams.includes(spell.team);
     if (
       isHumanLeader &&
       !spell.counterPrompt &&
-      g.age - spell.startedAt >= 3.5 &&
+      g.age - spell.startedAt >= 1.5 &&
       spell.castAt !== undefined &&
-      spell.castAt - g.age >= 4
+      spell.castAt - g.age >= 1.5
     ) {
       const eligibleBots: Team[] = (['red', 'purple', 'green'] as Team[]).filter(
         (t) => t !== spell.team && (!g.humanTeams || !g.humanTeams.includes(t)) && g.towers.some((tw) => tw.team === t),
@@ -1767,29 +1778,44 @@ export function tick(previous: Game, dt = 0.05): Game {
         const effectivePatch: Decree = isCounterWinner && activeSpell.counterPatch ? activeSpell.counterPatch : activeSpell.patch;
         const effectiveTeam: Team = isCounterWinner && activeSpell.counterTeam ? activeSpell.counterTeam : activeSpell.team;
 
-        g = applyDecree(
+        let nextG = applyDecree(
           { ...g, spell: undefined },
           effectiveTeam,
           effectivePatch,
           activeSpell.epoch,
         );
         if (activeSpell.counterPrompt) {
+          const winningDesc = describeDecree(effectivePatch)[0] || (isCounterWinner ? activeSpell.counterPrompt : activeSpell.prompt);
+          const winnerTeam = effectiveTeam;
+          const loserTeam = isCounterWinner ? activeSpell.team : (activeSpell.counterTeam ?? 'red');
+          const winnerName = playerName(nextG, winnerTeam);
+
+          nextG.lastDuel = {
+            winner: isCounterWinner ? 'counter' : 'leader',
+            winnerTeam,
+            loserTeam,
+            leaderPrompt: activeSpell.prompt,
+            counterPrompt: activeSpell.counterPrompt,
+            winningText: winningDesc,
+            at: nextG.age,
+            until: nextG.age + 6,
+          };
+
           if (isCounterWinner) {
-            const winnerName = playerName(g, effectiveTeam);
-            g.notice = `⚔️ Анти-приказ (${winnerName}) победил в рулетке (50%) и изменил мир!`;
+            nextG.notice = `⚔️ Анти-приказ (${winnerName}) победил в рулетке (50%)! «${winningDesc}»`;
           } else {
-            const leaderName = playerName(g, activeSpell.team);
-            g.notice = `👑 Воля Лидера (${leaderName}) победила дуэль (50%) в рулетке!`;
+            nextG.notice = `👑 Воля Лидера (${winnerName}) победила дуэль (50%)! «${winningDesc}»`;
           }
         }
         if (activeSpell.debuff && activeSpell.counterOutcome !== 'counter') {
-          g.curses = [
-            ...(g.curses ?? []),
-            { team: activeSpell.team, debuff: activeSpell.debuff, at: g.age },
+          nextG.curses = [
+            ...(nextG.curses ?? []),
+            { team: activeSpell.team, debuff: activeSpell.debuff, at: nextG.age },
           ];
-          g.notice += ` Побочный эффект: ${activeSpell.debuff.title}.`;
+          nextG.notice += ` Побочный эффект: ${activeSpell.debuff.title}.`;
         }
-      } else if (!activeSpell.patch && g.age - activeSpell.startedAt > 25) {
+        g = nextG;
+      } else if (!activeSpell.patch && g.age - activeSpell.startedAt > 15) {
         g.spell = undefined;
         g.notice = 'Время ожидания приказа истекло';
       }

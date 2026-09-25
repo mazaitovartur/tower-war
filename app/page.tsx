@@ -3086,7 +3086,9 @@ export default function Home() {
       )}
       {game.spell && (() => {
         const authorTeam = game.spell!.team;
-        const rawText = (game.spell!.patch ? describeDecree(game.spell!.patch)[0] : '') || game.spell!.prompt;
+        const rawText = ((game.spell!.patch ? describeDecree(game.spell!.patch)[0] : '') || game.spell!.prompt)
+          .replace(/\s*\[цель:.*?\]/gi, '')
+          .trim();
         const isSpecial = rawText.startsWith('⚡');
         const timeLeft = game.spell!.castAt ? Math.max(0, Math.ceil(game.spell!.castAt - game.age)) : null;
         return (
@@ -3094,26 +3096,24 @@ export default function Home() {
             key={`spell-${game.spell!.startedAt}`}
             className={`decree-notice-pill ${isSpecial ? 'special-era' : ''}`}
           >
-            <span
-              className="decree-pill-author"
-              style={{ color: TEAMS[authorTeam].color }}
-            >
-              👑 {playerName(game, authorTeam)}
-            </span>
-            <span className="decree-pill-sep">·</span>
-            <span className="decree-pill-text">{rawText}</span>
-            {timeLeft !== null && timeLeft > 0 && (
-              <>
-                <span className="decree-pill-sep">·</span>
+            <div className="decree-pill-top-row">
+              <span
+                className="decree-pill-author"
+                style={{ color: TEAMS[authorTeam].color }}
+              >
+                👑 {playerName(game, authorTeam)}
+              </span>
+              {timeLeft !== null && timeLeft > 0 && (
                 <span className="decree-pill-time">{timeLeft} с</span>
-              </>
-            )}
+              )}
+            </div>
+            <div className="decree-pill-text">{rawText}</div>
           </div>
         );
       })()}
       {!game.spell && game.announcement && game.announcement.until > game.age && (() => {
         const authorTeam = game.announcement!.team;
-        const rawText = game.announcement!.text;
+        const rawText = game.announcement!.text.replace(/\s*\[цель:.*?\]/gi, '').trim();
         const isSpecial = rawText.startsWith('⚡');
         const timeLeft = Math.max(0, Math.ceil(game.announcement!.until - game.age));
         return (
@@ -3121,29 +3121,25 @@ export default function Home() {
             key={`ann-${game.announcement!.team}-${game.announcement!.until}`}
             className={`decree-notice-pill ${isSpecial ? 'special-era' : ''}`}
           >
-            <span
-              className="decree-pill-author"
-              style={{ color: TEAMS[authorTeam].color }}
-            >
-              👑 {playerName(game, authorTeam)}
-            </span>
-            <span className="decree-pill-sep">·</span>
-            <span className="decree-pill-text">{rawText}</span>
-            {timeLeft > 0 && (
-              <>
-                <span className="decree-pill-sep">·</span>
+            <div className="decree-pill-top-row">
+              <span
+                className="decree-pill-author"
+                style={{ color: TEAMS[authorTeam].color }}
+              >
+                👑 {playerName(game, authorTeam)}
+              </span>
+              {timeLeft > 0 && (
                 <span className="decree-pill-time">{timeLeft} с</span>
-              </>
-            )}
+              )}
+            </div>
+            <div className="decree-pill-text">{rawText}</div>
           </div>
         );
       })()}
       {game.spell && (() => {
         const isCountdownActive = (game.spell.castAt ?? 0) > game.age;
         const hasCounter = !!game.spell.counterPrompt;
-        const isDuelSpinning = hasCounter && isCountdownActive;
-        const isSettled = !isCountdownActive || (!hasCounter && !!game.spell.patch);
-        const counterWon = game.spell.counterOutcome === 'counter';
+        const timeLeft = Math.max(0, Math.ceil((game.spell.castAt ?? game.age) - game.age));
 
         return (
           <output
@@ -3158,9 +3154,9 @@ export default function Home() {
           >
             <div className="roulette-disc-wrap">
               <div
-                className={`roulette-disc ${isSettled ? 'settled' : ''} ${hasCounter ? (counterWon && isSettled ? 'counter-win' : 'pure') : 'pure'}`}
+                className={`roulette-disc ${hasCounter ? 'spinning' : 'pure'}`}
               >
-                {isDuelSpinning ? '🎲' : hasCounter ? (counterWon ? '⚔️' : '👑') : game.spell.patch ? '👑' : '📜'}
+                {hasCounter ? '🎲' : game.spell.patch ? '👑' : '📜'}
               </div>
             </div>
             <div
@@ -3194,16 +3190,12 @@ export default function Home() {
                 }}
               >
                 <span className="roulette-caster" style={{ color: TEAMS[game.spell.team].color }}>
-                  {playerName(game, game.spell.team)}
+                  👑 {playerName(game, game.spell.team)}
                 </span>
                 <span
                   className={`roulette-outcome-badge ${
                     hasCounter
-                      ? isDuelSpinning
-                        ? 'spinning'
-                        : counterWon
-                          ? 'counter-win'
-                          : 'pure'
+                      ? 'spinning'
                       : 'pure'
                   }`}
                   style={{
@@ -3213,13 +3205,9 @@ export default function Home() {
                   }}
                 >
                   {hasCounter
-                    ? isDuelSpinning
-                      ? '⚔️ Рулетка дуэли 50% / 50% вращается…'
-                      : counterWon
-                        ? `⚔️ Анти-приказ (${playerName(game, game.spell.counterTeam ?? 'red')}) победил!`
-                        : `👑 Воля Лидера (${playerName(game, game.spell.team)}) победила!`
+                    ? `🎲 Рулетка вращается… (${timeLeft} с)`
                     : game.spell.patch
-                      ? '✓ Приказ утверждён'
+                      ? `✓ Приказ утверждён (${timeLeft} с)`
                       : 'Подготовка приказа…'}
                 </span>
               </div>
@@ -3232,15 +3220,40 @@ export default function Home() {
               )}
               <div className="roulette-countdown-bar">
                 <small>
-                  {game.spell.patch
-                    ? isCountdownActive
-                      ? `Вступает в силу через ${Math.max(0, Math.ceil((game.spell.castAt ?? game.age) - game.age))} с (удержите цитадель)`
-                      : 'Приказ вступил в силу!'
-                    : 'Бой продолжается…'}
+                  {hasCounter
+                    ? `Исход решится рулеткой 50/50 через ${timeLeft} с!`
+                    : isCountdownActive
+                      ? `Вступает в силу через ${timeLeft} с (удержите цитадель)`
+                      : 'Приказ вступил в силу!'}
                 </small>
               </div>
             </div>
           </output>
+        );
+      })()}
+      {game.lastDuel && game.lastDuel.until > game.age && (() => {
+        const isCounterWinner = game.lastDuel.winner === 'counter';
+        const winnerTeam = game.lastDuel.winnerTeam;
+        const timeLeft = Math.max(0, Math.ceil(game.lastDuel.until - game.age));
+        return (
+          <div className={`duel-result-toast ${isCounterWinner ? 'counter-win' : 'leader-win'}`}>
+            <div className="duel-result-header">
+              <span>{isCounterWinner ? '⚔️ ИТОГ РУЛЕТКИ (50% / 50%)' : '👑 ИТОГ РУЛЕТКИ (50% / 50%)'}</span>
+              <span>{timeLeft} с</span>
+            </div>
+            <div className="duel-result-winner" style={{ color: TEAMS[winnerTeam].color }}>
+              {isCounterWinner ? '🏆 ПОБЕДИЛ АНТИ-ПРИКАЗ:' : '🏆 ПОБЕДИЛА ВОЛЯ ЛИДЕРА:'}{' '}
+              {playerName(game, winnerTeam)}
+            </div>
+            <div className="duel-result-effect">
+              Вступил в силу: <b>{game.lastDuel.winningText}</b>
+            </div>
+            <div className="duel-result-sub">
+              {isCounterWinner
+                ? `Приказ лидера («${game.lastDuel.leaderPrompt}») парирован и отменён!`
+                : `Анти-приказ («${game.lastDuel.counterPrompt}») отклонён рулеткой.`}
+            </div>
+          </div>
         );
       })()}
       {(game.curses ?? [])
@@ -3440,7 +3453,7 @@ export default function Home() {
             const isAntiMode = !!(game.spell && game.spell.team !== myTeam && !game.result);
             const isLeaderTurn = !developing && game.authority === 'you' && !game.result;
             const antiSecondsLeft = isAntiMode
-              ? Math.max(0, Math.ceil((game.spell!.castAt ?? (game.spell!.startedAt + 20)) - game.age))
+              ? Math.max(0, Math.ceil((game.spell!.castAt ?? (game.spell!.startedAt + 10)) - game.age))
               : 0;
 
             return (

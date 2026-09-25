@@ -390,7 +390,9 @@ export function localDecree(prompt: string, casterName = 'Командир'): De
     return null;
   }
 
+  const hasNegativeNumber = /-\s*\d+/.test(text);
   const isSubtracting =
+    hasNegativeNumber ||
     /(?:отними|отнять|забери|забрать|убери|убрать|убавь|убавить|уменьши|уменьшить|сократи|сократить|сними|снять|лиши|лишить|срежь|срезать|минус)/.test(
       text,
     );
@@ -398,7 +400,7 @@ export function localDecree(prompt: string, casterName = 'Командир'): De
   const isSubtractingTroopsOrRes =
     isSubtracting &&
     !/(?:шахт|рудник|лесопил|казарм|башн|здани|контрол)/.test(text) &&
-    /(?:войск|арми|солдат|людей|люди|пехот|человек|сил\b|воин|юнит|золот|монет|деньг|древес|дерев|ресурс)/.test(text);
+    (hasNegativeNumber || /(?:войск|арми|солдат|людей|люди|пехот|человек|сил\b|воин|юнит|золот|монет|деньг|древес|дерев|ресурс)/.test(text));
 
   const isClaiming =
     !isSubtractingTroopsOrRes &&
@@ -761,7 +763,10 @@ export function localDecree(prompt: string, casterName = 'Командир'): De
     p = { kind: 'repair', target: target === 'all' ? 'all' : target, amount: 1 };
   else if (/продли|добавь\s+врем|таймер/.test(text))
     p = { kind: 'time', target: 'everyone', amount: amount ?? 60 };
-  else if (/войск|арми|солдат|людей|люди|пехот|человек|сил\b|подкрепл|дай|добав|прибав|увелич|\+|воин|юнит|отними|забери|убавь|уменьши|сократи|сними/.test(text)) {
+  else if (
+    hasNegativeNumber ||
+    /войск|арми|солдат|людей|люди|пехот|человек|сил\b|подкрепл|дай|добав|прибав|увелич|\+|воин|юнит|отними|забери|убавь|уменьши|сократи|сними/.test(text)
+  ) {
     const finalAmount = amount !== null ? (isSubtracting ? -Math.abs(amount) : amount) : (isSubtracting ? -30 : 30);
     p = { kind: 'reinforce', amount: finalAmount, target: target === 'all' ? (isSubtracting ? 'enemies' : 'all') : target };
   }
@@ -818,43 +823,42 @@ export function describeTarget(target: Target): string {
 }
 
 export function describeAction(a: Action): string {
-  const t = describeTarget(a.target);
   switch (a.kind) {
-    case 'burn': return `🔥 Сожжение дотла в тлеющие угли [цель: ${t}]`;
-    case 'nuke': return `☢️ Ядерный удар с сотрясением [цель: ${t}]`;
-    case 'explode': return `💥 Мощный подрыв позиций [цель: ${t}]`;
-    case 'orbital': return `🛰️ Орбитальный лазерный залп [цель: ${t}]`;
-    case 'destroy': return `💣 Уничтожение укреплений [цель: ${t}]`;
-    case 'transfer': return `🚩 Переход под контроль игрока [цель: ${t}]`;
-    case 'capture': return `🏰 Захват зданий [цель: ${t}]`;
-    case 'lightning': return `⚡ Громовой шторм Зевса [цель: ${t}]`;
-    case 'zombie': return `🧟 Нашествие орды нежити (${a.amount ?? 25} зомби) [цель: ${t}]`;
-    case 'blackhole': return `🕳️ Черная дыра поглощает войска [цель: ${t}]`;
-    case 'blizzard': return `❄️ Ледниковый буран замораживает на ${a.amount ?? 25}с [цель: ${t}]`;
-    case 'midas': return `✨ Прикосновение Мидаса (обращение в золото) [цель: ${t}]`;
-    case 'tornado': return `🌪️ Разрушительный смерч разметал войска [цель: ${t}]`;
-    case 'polymorph': return `🐸 Превращение в лягушек на ${a.amount ?? 25}с [цель: ${t}]`;
-    case 'peace': return `🕊️ Священное перемирие на ${a.amount ?? 25}с [цель: ${t}]`;
-    case 'alien': return `🛸 Похищение войск пришельцами [цель: ${t}]`;
-    case 'titans': return `🔱 Пробуждение титанов на ${a.amount ?? 30}с [цель: ${t}]`;
-    case 'reveal': return `👁️ Развеять туман войны на ${a.amount ?? 60}с [цель: ${t}]`;
-    case 'shield': return `🛡️ Непробиваемый щит на ${a.amount ?? 30}с [цель: ${t}]`;
-    case 'freeze': return `🧊 Полная заморозка на ${a.amount ?? 30}с [цель: ${t}]`;
+    case 'burn': return '🔥 Сожжение дотла в тлеющие угли';
+    case 'nuke': return '☢️ Ядерный удар с сотрясением';
+    case 'explode': return '💥 Мощный подрыв позиций';
+    case 'orbital': return '🛰️ Орбитальный лазерный залп';
+    case 'destroy': return '💣 Уничтожение укреплений';
+    case 'transfer': return '🚩 Переход под контроль игрока';
+    case 'capture': return '🏰 Захват зданий';
+    case 'lightning': return '⚡ Громовой шторм Зевса';
+    case 'zombie': return `🧟 Нашествие орды нежити (${a.amount ?? 25} зомби)`;
+    case 'blackhole': return '🕳️ Черная дыра поглощает войска';
+    case 'blizzard': return `❄️ Ледниковый буран замораживает на ${a.amount ?? 25}с`;
+    case 'midas': return '✨ Прикосновение Мидаса (обращение в золото)';
+    case 'tornado': return '🌪️ Разрушительный смерч разметал войска';
+    case 'polymorph': return `🐸 Превращение в лягушек на ${a.amount ?? 25}с`;
+    case 'peace': return `🕊️ Священное перемирие на ${a.amount ?? 25}с`;
+    case 'alien': return '🛸 Похищение войск пришельцами';
+    case 'titans': return `🔱 Пробуждение титанов на ${a.amount ?? 30}с`;
+    case 'reveal': return `👁️ Развеять туман войны на ${a.amount ?? 60}с`;
+    case 'shield': return `🛡️ Непробиваемый щит на ${a.amount ?? 30}с`;
+    case 'freeze': return `🧊 Полная заморозка на ${a.amount ?? 30}с`;
     case 'party': return `🎉 Дискотека на поле боя на ${a.amount ?? 30}с`;
-    case 'confuse': return `🌀 Бунт и разворот бегущих отрядов [цель: ${t}]`;
-    case 'repair': return `🔨 Восстановление разрушенных зданий [цель: ${t}]`;
-    case 'rename': return `🏷️ Переименование в "${a.text ?? ''}" [цель: ${t}]`;
-    case 'label': return `👑 Статус над штабом: "${a.text ?? ''}" [цель: ${t}]`;
-    case 'reinforce': return a.amount < 0 ? `🔻 Отнять ${Math.abs(a.amount)} бойцов [цель: ${t}]` : `👥 Подкрепление: +${a.amount} бойцов [цель: ${t}]`;
-    case 'gold': return a.amount < 0 ? `🔻 Изъять ${Math.abs(a.amount)} золота [цель: ${t}]` : `💰 Золото: +${a.amount} [цель: ${t}]`;
-    case 'resources': return a.amount < 0 ? `🔻 Изъять ${Math.abs(a.amount)} древесины [цель: ${t}]` : `🪵 Древесина: +${a.amount} [цель: ${t}]`;
-    case 'speed': return `👟 Скорость бега: ×${a.amount} [цель: ${t}]`;
-    case 'growth': return `📈 Прирост гарнизона: ×${a.amount} [цель: ${t}]`;
-    case 'upgrade': return `⭐ Уровень зданий повышен до ${a.amount} [цель: ${t}]`;
-    case 'set': return a.amount === 0 ? `🔢 Обнуление гарнизонов и войск [цель: ${t}]` : `🔢 Численность гарнизона установлена в ${a.amount} [цель: ${t}]`;
-    case 'multiply': return `✖️ Гарнизоны умножены на ${a.amount} [цель: ${t}]`;
+    case 'confuse': return '🌀 Бунт и разворот бегущих отрядов';
+    case 'repair': return '🔨 Восстановление разрушенных зданий';
+    case 'rename': return `🏷️ Переименование в "${a.text ?? ''}"`;
+    case 'label': return `👑 Статус над штабом: "${a.text ?? ''}"`;
+    case 'reinforce': return a.amount < 0 ? `🔻 Отнять ${Math.abs(a.amount)} бойцов` : `👥 Подкрепление: +${a.amount} бойцов`;
+    case 'gold': return a.amount < 0 ? `🔻 Изъять ${Math.abs(a.amount)} золота` : `💰 Золото: +${a.amount}`;
+    case 'resources': return a.amount < 0 ? `🔻 Изъять ${Math.abs(a.amount)} древесины` : `🪵 Древесина: +${a.amount}`;
+    case 'speed': return `👟 Скорость бега: ×${a.amount}`;
+    case 'growth': return `📈 Прирост гарнизона: ×${a.amount}`;
+    case 'upgrade': return `⭐ Уровень зданий повышен до ${a.amount}`;
+    case 'set': return a.amount === 0 ? '🔢 Обнуление гарнизонов и войск' : `🔢 Численность гарнизона установлена в ${a.amount}`;
+    case 'multiply': return `✖️ Гарнизоны умножены на ${a.amount}`;
     case 'messages': return a.amount === 0 ? '💬 Облачка сообщений скрыты' : '💬 Облачка сообщений включены';
-    default: return `${a.kind} [цель: ${t}, кол-во: ${a.amount}]`;
+    default: return `${a.kind} (${a.amount})`;
   }
 }
 
@@ -873,7 +877,21 @@ export function generateCounterDecree(
   counterTeam: 'you' | 'red' | 'purple' | 'green',
   leaderPatch?: Decree,
 ): Decree {
+  const local = localDecree(counterText);
+  if (local && validDecree(local)) {
+    return local;
+  }
   const t = counterText.toLowerCase();
+  const numMatch = counterText.match(/-?\d+/);
+  if (numMatch) {
+    const val = parseInt(numMatch[0], 10);
+    if (val < 0 || /минус|отними|забери|убав|уменьш|но\s*-/i.test(counterText)) {
+      return { kind: 'reinforce', target: 'enemies', amount: -Math.abs(val || 100) };
+    }
+    if (/войск|арми|солдат|юнит|бойц/i.test(t)) {
+      return { kind: 'reinforce', target: counterTeam, amount: Math.abs(val) };
+    }
+  }
   if (/(?:башн|шахт|здан|захват|отбер|забер|мои|мо[её]|под\s+контрол|все\s+базы)/i.test(t)) {
     return {
       kind: 'batch',

@@ -1508,21 +1508,21 @@ html,body{background:#a3ce57 url('/assets/battlefield.png') center/cover fixed n
 }
 
 .war-shell .hud-notifications .decree-notice-pill {
-  display: inline-flex !important;
-  align-items: center !important;
-  justify-content: center !important;
-  gap: 6px !important;
-  background: linear-gradient(135deg, #f5f3ff 0%, #ede9fe 100%) !important;
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: stretch !important;
+  gap: 3px !important;
+  background: linear-gradient(135deg, #ede9fe 0%, #ddd6fe 100%) !important;
   border: 1.5px solid #c4b5fd !important;
-  border-bottom: 3.5px solid #8b5cf6 !important;
+  border-bottom: 3.5px solid #7c3aed !important;
   border-radius: 12px !important;
-  padding: 7px 14px !important;
+  padding: 6px 12px !important;
   color: #4c1d95 !important;
   font-size: 12px !important;
-  font-weight: 850 !important;
-  box-shadow: 0 4px 14px rgba(139, 92, 246, 0.22) !important;
+  font-weight: 750 !important;
+  box-shadow: 0 4px 14px rgba(109, 40, 217, 0.18) !important;
   word-break: break-word !important;
-  text-align: center !important;
+  text-align: left !important;
   animation: fadeIn 0.2s ease !important;
   pointer-events: auto !important;
 }
@@ -1532,29 +1532,114 @@ html,body{background:#a3ce57 url('/assets/battlefield.png') center/cover fixed n
   border-color: #7dd3fc !important;
   border-bottom-color: #0284c7 !important;
   color: #0369a1 !important;
-  box-shadow: 0 4px 14px rgba(14, 165, 233, 0.22) !important;
+  box-shadow: 0 4px 14px rgba(14, 165, 233, 0.18) !important;
+}
+
+.war-shell .hud-notifications .decree-notice-pill .decree-pill-top-row {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 8px !important;
+  width: 100% !important;
 }
 
 .war-shell .hud-notifications .decree-notice-pill .decree-pill-author {
   font-weight: 900 !important;
   letter-spacing: 0.3px !important;
+  font-size: 12px !important;
   white-space: nowrap !important;
 }
 
 .war-shell .hud-notifications .decree-notice-pill .decree-pill-sep {
-  opacity: 0.5 !important;
-  font-weight: 900 !important;
+  display: none !important;
 }
 
 .war-shell .hud-notifications .decree-notice-pill .decree-pill-text {
   font-weight: 750 !important;
+  font-size: 12px !important;
+  line-height: 1.35 !important;
+  color: #2e1065 !important;
+}
+
+.war-shell .hud-notifications .decree-notice-pill.special-era .decree-pill-text {
+  color: #0c4a6e !important;
 }
 
 .war-shell .hud-notifications .decree-notice-pill .decree-pill-time {
   font-size: 11px !important;
-  opacity: 0.85 !important;
+  opacity: 0.9 !important;
   font-weight: 800 !important;
   white-space: nowrap !important;
+  background: rgba(76, 29, 149, 0.12) !important;
+  padding: 1px 6px !important;
+  border-radius: 999px !important;
+}
+
+.war-shell .hud-notifications .decree-notice-pill.special-era .decree-pill-time {
+  background: rgba(2, 132, 199, 0.14) !important;
+  color: #0284c7 !important;
+}
+
+/* --- Post-Duel Result Banner (50% / 50% Roulette Winner) --- */
+.war-shell .hud-notifications .duel-result-toast {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 4px !important;
+  padding: 8px 14px !important;
+  border-radius: 12px !important;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.25) !important;
+  animation: fadeIn 0.25s ease !important;
+  pointer-events: auto !important;
+  border: 1.5px solid !important;
+  text-align: left !important;
+}
+
+.war-shell .hud-notifications .duel-result-toast.counter-win {
+  background: linear-gradient(135deg, #f5f3ff 0%, #ede9fe 100%) !important;
+  border-color: #a855f7 !important;
+  border-bottom: 3.5px solid #7e22ce !important;
+  color: #581c87 !important;
+}
+
+.war-shell .hud-notifications .duel-result-toast.leader-win {
+  background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%) !important;
+  border-color: #f59e0b !important;
+  border-bottom: 3.5px solid #b45309 !important;
+  color: #78350f !important;
+}
+
+.war-shell .hud-notifications .duel-result-toast .duel-result-header {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  font-size: 11px !important;
+  font-weight: 900 !important;
+  letter-spacing: 0.5px !important;
+  text-transform: uppercase !important;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.08) !important;
+  padding-bottom: 3px !important;
+}
+
+.war-shell .hud-notifications .duel-result-toast .duel-result-winner {
+  font-size: 13px !important;
+  font-weight: 900 !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 5px !important;
+}
+
+.war-shell .hud-notifications .duel-result-toast .duel-result-effect {
+  font-size: 12px !important;
+  font-weight: 750 !important;
+  line-height: 1.35 !important;
+  padding: 3px 6px !important;
+  background: rgba(255, 255, 255, 0.6) !important;
+  border-radius: 6px !important;
+}
+
+.war-shell .hud-notifications .duel-result-toast .duel-result-sub {
+  font-size: 11px !important;
+  opacity: 0.8 !important;
 }
 
 /* --- Unified Header Buttons (Light Brown Text like Settings) --- */
